@@ -79,6 +79,53 @@ def surfaces(data_recording, res_x, res_y, surf_dim, tau, n_pol):
         
     return surfs
 
+
+def fb_surfaces(data_recording, n_clusters, tau):
+    """ 
+    This function is used to generate the time surfaces used for feedback per each recording.
+    x and y are not used, but in the future it will be adapted for cnn networks
+
+    Arguments :
+        
+        data_recording: data of a single recording. List of 4 arrays [x, y, p, t]
+                        containing spatial coordinates of events (x,y), polarities
+                        (p) and timestamps (t).
+                        
+        n_clusters: The number of clusters in the current layer. It determines the surf length
+                        
+        
+        tau : temporal coefficient for the exp decay.
+       
+        n_pol: number of polarities of the data_recording, if =-1, polarity info
+               will be discarded (useful for the first layer usually).
+               
+    Returns: 
+        surfs: array containing all the time surfaces created using the input data.
+               -dimension of surf if pol is a int>0 [n_events, n_pol, surf_dim, surf_dim]
+               -dimension of surf if pol is -1 [n_events, surf_dim, surf_dim]
+        
+    """
+    
+    n_events=len(data_recording[3])
+
+    # Allocate some memory
+    surface = np.zeros([n_clusters], dtype=np.float32) #zeropadding the borders
+    surfs = np.zeros([n_events, n_clusters], dtype=np.float32)
+    timestamp_table = np.ones([n_clusters])*-1 # (Starting negative values will keep the decay map on FALSE STATES) 
+
+    
+    for event in range(n_events):
+        new_ts = data_recording[3][event]
+        new_cluster = int(data_recording[2][event])
+        timestamp_table[new_cluster] = new_ts
+        decay_map = ((new_ts-timestamp_table)>0)*(timestamp_table>0) # map used to identify the regime for each pixel, 1 if decaying
+        surface = np.exp(((timestamp_table-new_ts)*decay_map)/tau)*decay_map 
+        
+        # Update surfs and tables. 
+        surfs[event,:] = surface[:]
+        
+    return surfs
+
 def learn(dataset, surf_dim, res_x, res_y, tau, n_clusters, n_pol,
           num_batches, n_jobs):
     
