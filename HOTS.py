@@ -28,8 +28,8 @@ n_recording_labels_train=[len(train_set_orig[label]) for label in range(len(trai
 n_recording_labels_test=[len(test_set_orig[label]) for label in range(len(train_set_orig))]
 
 # using a subset of N-MNIST to lower memory usage
-files_dataset_train = min(n_recording_labels_train)//10
-files_dataset_test = min(n_recording_labels_test)//10
+files_dataset_train = min(n_recording_labels_train)//1
+files_dataset_test = min(n_recording_labels_test)//1
 num_labels = len(test_set_orig)
 
 # N-MNIST resolution 
@@ -43,19 +43,17 @@ surf_dim = [7,3]#lateral dimension of surfaces
 n_clusters = [16,512]
 n_jobs = 21  
 n_pol = [-1,16]#input polarities of each layer (if -1 polarity is discarded.)
-n_batches=[1,1]#batches of data for minibatchkmeans
-n_batches_test=[1,1]
+n_batches=[10,10]#batches of data for minibatchkmeans
+n_batches_test=[10,10]
 u=7 #Spatial downsample factor
-n_runs = 5 # run the code multiple times on reshuffled data to better assest performance
+n_runs = 1 # run the code multiple times on reshuffled data to better assest performance
 seeds = [1,2,3,4,5]
-
-
-
-
-#%%% BENCH HOTS
 
 # HOTS tau for first and second layer.
 tau = [5000,92000]
+
+
+#%%% BENCH HOTS
 
 H_kmeansss = [] #save the networks layer for every run
 H_res = [] #save the networks layer for every run
@@ -128,13 +126,13 @@ for run in range(n_runs):
         
 
 #%% Save run (Uncomment all code to save)
-# filename='Results/HOTS results/test_result_new.pkl'
-# with open(filename, 'wb') as f: 
-#     pickle.dump([H_kmeansss, H_res], f)
+filename='Results/test_result_new.pkl'
+with open(filename, 'wb') as f: 
+    pickle.dump([H_kmeansss, H_res], f)
 
 
 #%% Load previous results 
-# filename='Results/HOTS results/test_result_new.pkl'
+# filename='Results/test_result_new.pkl'
 # with open(filename, 'rb') as f:  # Python 3: open(..., 'rb')
 #     H_kmeansss, H_res = pickle.load(f)
 

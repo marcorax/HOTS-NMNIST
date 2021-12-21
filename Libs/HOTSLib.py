@@ -141,11 +141,8 @@ def learn(dataset, surf_dim, res_x, res_y, tau, n_clusters, n_pol,
 
     kmeans = MiniBatchKMeans(n_clusters=n_clusters,
                           verbose=0,
-                          batch_size=100000)
+                          batch_size=n_total_events//num_batches)
     
-    # kmeans = KMeans(n_clusters=n_clusters,
-    #                       # random_state=0, 
-    #                       verbose=1, max_iter=1000000)
     
     print('Generating Time Surfaces and Clustering')
     start_time = time.time()
@@ -181,19 +178,19 @@ def learn(dataset, surf_dim, res_x, res_y, tau, n_clusters, n_pol,
         gc.collect()
         
         
-        idx = np.arange(n_batch_events)
-        np.random.shuffle(idx)
-        ## CLUSTERING ##
-        if n_pol == -1:
-            total_surfs = total_surfs[idx,:,:]
-            total_surfs = total_surfs.reshape([len(total_surfs),surf_dim**2]).astype('float32')
-        else:            
-            total_surfs = total_surfs[idx,:,:,:]
-            total_surfs = total_surfs.reshape([len(total_surfs),n_pol*surf_dim**2]).astype('float32')
+    # idx = np.arange(n_batch_events)
+    # np.random.shuffle(idx)
+    ## CLUSTERING ##
+    if n_pol == -1:
+        # total_surfs = total_surfs[idx,:,:]
+        total_surfs = total_surfs.reshape([len(total_surfs),surf_dim**2]).astype('float32')
+    else:            
+        # total_surfs = total_surfs[idx,:,:,:]
+        total_surfs = total_surfs.reshape([len(total_surfs),n_pol*surf_dim**2]).astype('float32')
 
 
-        kmeans = kmeans.fit(total_surfs)
-        kmeans.distortion_ = (sum(np.min(cdist(total_surfs, kmeans.cluster_centers_,'euclidean'), axis=1)) / total_surfs.shape[0])
+    kmeans = kmeans.fit(total_surfs)
+    kmeans.distortion_ = (sum(np.min(cdist(total_surfs, kmeans.cluster_centers_,'euclidean'), axis=1)) / total_surfs.shape[0])
         
     print('\rProgress 100%. Completed in: '+ str(time.time()-start_time)+'seconds')     
         
