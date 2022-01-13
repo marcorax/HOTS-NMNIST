@@ -118,7 +118,7 @@ def fb_surfaces(data_recording, n_clusters, tau):
         new_ts = data_recording[3][event]
         new_cluster = int(data_recording[2][event])
         timestamp_table[new_cluster] = new_ts
-        decay_map = ((new_ts-timestamp_table)>0)*(timestamp_table>0) # map used to identify the regime for each pixel, 1 if decaying
+        decay_map = ((new_ts-timestamp_table)>=0)*(timestamp_table>0) # map used to identify the regime for each pixel, 1 if decaying
         surface = np.exp(((timestamp_table-new_ts)*decay_map)/tau)*decay_map 
         
         # Update surfs and tables. 
