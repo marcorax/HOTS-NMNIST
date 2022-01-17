@@ -55,11 +55,11 @@ test_set_orig = dataset_resize(test_set_orig,res_x,res_y)
 
 # Network parameters
 layers = 1
-surf_dim = [13,3]#lateral dimension of surfaces
+surf_dim = [17,3]#lateral dimension of surfaces
 # n_clusters = [32,512]
-n_clusters = [32,96]
+n_clusters = [64,96]
 n_jobs = 21  
-n_pol = [-1,32]#input polarities of each layer (if -1 polarity is discarded.)
+n_pol = [-1,64]#input polarities of each layer (if -1 polarity is discarded.)
 n_batches=[1,1]#batches of data for minibatchkmeans
 n_batches_test=[1,1]
 u=7 #Spatial downsample factor
@@ -158,7 +158,7 @@ for run in range(n_runs):
     H_clusters.append(H_clusters_run)
 
 #%% Save run (Uncomment all code to save)
-filename='Results/HOTS results/1Lay1run5000_32.pkl'
+filename='Results/HOTS results/1Lay1run5000_64_17size.pkl'
 with open(filename, 'wb') as f: 
     pickle.dump([H_clusters, H_eucl_res, H_eucl_norm_res, H_svc_res, H_svc_norm_res], f)
 
@@ -188,6 +188,7 @@ print("Layer2 HOTS: "+str(H2)+"+-"+str(H2_sd)) #Mean result +- std
 #%% Create the time surfaces of the train_set first layer
 layer = 0
 train_surfs_0 = []
+
 for label in range(10):
     train_surfs_0_label = Parallel(n_jobs=n_jobs)(delayed(surfaces)(train_set_orig[label][recording], res_x, res_y, surf_dim[layer],
                                 tau[layer], n_pol[layer]) for recording in range(files_dataset_train))
@@ -430,6 +431,121 @@ with keyboard.Listener(on_press=on_press) as listener:
             print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
             print("Prediction: "+result+str(label))
     listener.join()
+#%% New Learning rule (under work) two layers
+from pynput import keyboard
+
+
+weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
+weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
+
+lrate_non_boost = 0.009
+lrate_boost = 1
+
+lrate=lrate_boost
+
+# Kmeans_features = H_clusters[0][0]
+
+nrows = 4
+ncols = int(np.ceil(n_clusters[0]/nrows))
+fig, axs = plt.subplots(nrows, ncols)
+fig.suptitle("New L Features")
+
+
+# label=0
+# recording=0
+random_rec_pick=np.mgrid[:10, :files_dataset_train].reshape(2,-1).T
+np.random.shuffle(random_rec_pick)
+rel_accuracy = [ ]
+train_net_response_0 = copy.deepcopy(train_set_orig)
+
+
+#initialize weights 0 to surfaces:
+
+for cluster_i in range(n_clusters[0]):
+    label=np.random.randint(0,9)
+    recording=np.random.randint(0,len(train_surfs_0[label]))
+    surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
+    weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
+
+def on_press(key):
+    global pause_pressed
+    global lrate
+    global lrate_non_boost
+    print('{0} pressed'.format(
+        key))
+    if key.char == ('p'):
+        pause_pressed=True
+    if key.char == ('s'):
+        lrate=lrate_non_boost
+        
+pause_pressed=False    
+with keyboard.Listener(on_press=on_press) as listener:
+    for epoch in range(100):
+        progress=0
+        for label,recording in random_rec_pick:
+            rec_distances_0=np.sum((train_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])**2,axis=(1,2))
+            rec_closest_0=np.argmin(rec_distances_0,axis=1)
+            rec_closest_0_one_hot = np.zeros([len(rec_closest_0),n_clusters[0]])
+            rec_closest_0_one_hot[np.arange(len(rec_closest_0)),rec_closest_0]=1
+            u_sampled_x=train_set_orig[label][recording][0]//u
+            u_sampled_y=train_set_orig[label][recording][1]//u
+            train_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
+                                            tau[layer+1], n_pol[layer+1])
+            
+            train_net_response_0[label][recording][2] = rec_closest_0
+            
+            rec_distances_1=np.sum((train_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
+            rec_closest_1=np.argmin(rec_distances_1,axis=1)
+            train_surfs_1_recording_fb=fb_surfaces([u_sampled_x, u_sampled_y, rec_closest_1, train_set_orig[label][recording][3]], 10,\
+                                            tau[layer])
+        
+            elem_distances_1 = (train_surfs_1_recording[:,:,:,:]-weights_1[None,:,:,:,label])
+            weights_1[:,:,:,label]+=lrate*np.mean(elem_distances_1[:],axis=0)
+           
+            # norm= 10-1
+            norm = 10-1
+            y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1))**7 #normalized by activation
+            # y_som=train_surfs_1_recording_fb[:,label]-1
+            y_corr=y_som*(y_som>0)
+            # y_corr=1*(y_som==0)
+
+            # y_som_rect=y_som*(y_som>0)
+            # y_corr=y_som_rect*(y_som_rect>np.mean(y_som))
+            y_anticorr = y_som*(y_som<0)
+            # y_anticorr = -1*(y_som<0)
+
+            print("Y-som, mean: "+str(np.mean(y_som))+"   Y-corr, max: "+str(np.max(y_corr))+"   Y-corr, mean: "+str(np.mean(y_corr)) )
+            elem_distances_0 = (train_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])
+            # Keep only the distances for winners
+            elem_distances_0=elem_distances_0[:,:,:,:]*rec_closest_0_one_hot[:,None,None,:]
+            #weights_0[:,:,:]+=lrate*(np.sum(y_corr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1))
+            # weights_0[:,:,:]+=0.001*lrate*(np.sum(y_anticorr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_anticorr[:,None],axis=0)+1))
+            #NO FEEDBACK
+            weights_0[:,:,:]+=lrate*(np.mean(elem_distances_0[:],axis=0))
+    
+            if pause_pressed == True:     
+                for feat in range(n_clusters[0]):
+                    axs[(feat//ncols)-1, feat%ncols].imshow(weights_0[:,:,feat] )
+                    plt.draw()
+                plt.pause(5)
+                pause_pressed=False
+            
+                
+            rec_closest_1_one_hot = np.zeros([len(rec_closest_1),10])
+            rec_closest_1_one_hot[np.arange(len(rec_closest_1)),rec_closest_1]=1
+            class_rate=np.sum(rec_closest_1_one_hot,axis=0)
+                
+            progress+=1/len(random_rec_pick)
+            if np.argmax(class_rate)==label:
+                result = "Correct"
+            else:
+                result = "Wrong"
+                
+            
+                
+            print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
+            print("Prediction: "+result+str(label))
+    listener.join()
 #%% Testing
 
 test_net_response_0 = copy.deepcopy(test_set_orig)
@@ -486,9 +602,26 @@ with open(filename, 'wb') as f:
 
 
 #%% Load previous results 
-filename='Results/New L results/1Lay1run5000_32.pkl'
+filename='Results/New L results/1Lay1run5000_64_17size_nofeedb.pkl'
 with open(filename, 'rb') as f:  # Python 3: open(..., 'rb')
     weights_0, weights_1, lrate, Accuracy = pickle.load(f)
+
+
+
+#%% calculate net responses given weights
+train_net_response_0 = copy.deepcopy(train_set_orig)
+test_net_response_0 = copy.deepcopy(train_set_orig)
+
+def hidden_response_generation(recording_dataset, surfaces, features):
+    rec_distances_0=np.sum((surfaces[:,:,:,None]-features[None,:,:,:])**2,axis=(1,2))
+    rec_closest_0=np.argmin(rec_distances_0,axis=1)         
+    return [recording_dataset[0],recording_dataset[1], rec_closest_0, recording_dataset[3]]
+
+for label in range(10):
+    train_response_0_label = Parallel(n_jobs=1)(delayed(hidden_response_generation)(train_net_response_0[label][recording], train_surfs_0[label][recording], weights_0) for recording in range(files_dataset_train))
+    test_response_0_label = Parallel(n_jobs=1)(delayed(hidden_response_generation)(test_net_response_0[label][recording], test_surfs_0[label][recording], weights_0) for recording in range(files_dataset_test))
+    train_net_response_0[label]=train_response_0_label
+    test_net_response_0[label]=test_response_0_label
 
 #%% Histogram and SVC on classes
 layer=0
@@ -549,21 +682,26 @@ l_index=0
 up_index=500
 plot_embedding(embedd_recording[l_index:up_index], recording_timestamps[l_index:up_index], "t-SNE timecoded surfaces timewindow")
 
-#%% Plot Centroids
+#%% Plot Centroids (corr net)
 New_L_features = weights_0
-# Kmeans_features = H_clusters[0][0]
 
 nrows = 4
 ncols = int(np.ceil(n_clusters[0]/nrows))
-# fig, axs = plt.subplots(nrows, ncols)
-
-# for feat in range(n_clusters[0]):
-#     axs[(feat//ncols)-1, feat%ncols].imshow(Kmeans_features[:,:,feat] )
-# fig.suptitle("Kmeans Features")
-
-
 fig, axs = plt.subplots(nrows, ncols)
 
 for feat in range(n_clusters[0]):
     axs[(feat//ncols)-1, feat%ncols].imshow(New_L_features[:,:,feat] )
 fig.suptitle("New L Features")
+
+#%% Plot Centroids (HOTS)
+Kmeans_features = H_clusters[0][0]
+
+nrows = 4
+ncols = int(np.ceil(n_clusters[0]/nrows))
+fig, axs = plt.subplots(nrows, ncols)
+
+for feat in range(n_clusters[0]):
+    axs[(feat//ncols)-1, feat%ncols].imshow(Kmeans_features[:,:,feat] )
+fig.suptitle("Kmeans Features")
+
+
