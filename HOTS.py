@@ -194,14 +194,15 @@ for label in range(10):
                                 tau[layer], n_pol[layer]) for recording in range(files_dataset_train))
     train_surfs_0.append(train_surfs_0_label)
     
-    
+gc.collect()    
 #%% Create the time surfaces of the test_set first layer
 layer = 0
 test_surfs_0 = []
-for label in range(10):
+for label in range(10): 
     test_surfs_0_label = Parallel(n_jobs=n_jobs)(delayed(surfaces)(test_set_orig[label][recording], res_x, res_y, surf_dim[layer],
                                 tau[layer], n_pol[layer]) for recording in range(files_dataset_test))
     test_surfs_0.append(test_surfs_0_label)
+gc.collect()    
     
 #%% New Learning rule (under work) three layers
 
@@ -392,6 +393,8 @@ with keyboard.Listener(on_press=on_press) as listener:
             y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1))**7 #normalized by activation
             # y_som=train_surfs_1_recording_fb[:,label]-1
             y_corr=y_som*(y_som>0)
+            # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
+            
             # y_corr=1*(y_som==0)
 
             # y_som_rect=y_som*(y_som>0)
@@ -519,6 +522,7 @@ with keyboard.Listener(on_press=on_press) as listener:
             # Keep only the distances for winners
             elem_distances_0=elem_distances_0[:,:,:,:]*rec_closest_0_one_hot[:,None,None,:]
             #weights_0[:,:,:]+=lrate*(np.sum(y_corr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1))
+            tmp = (y_corr[:,None,None,None]*train_surfs_0[label][recording][:])/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1)
             # weights_0[:,:,:]+=0.001*lrate*(np.sum(y_anticorr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_anticorr[:,None],axis=0)+1))
             #NO FEEDBACK
             weights_0[:,:,:]+=lrate*(np.mean(elem_distances_0[:],axis=0))
@@ -596,13 +600,13 @@ for label in range(10):
             
 print("relative accuracy = "+str(Accuracy))
 #%% Save new learning rule results (Uncomment all code to save)
-filename='Results/New L results/1Lay1run5000_32.pkl'
+filename='Results/New L results/1Lay1run5000_64_17size_feedback.pkl'
 with open(filename, 'wb') as f: 
-    pickle.dump([weights_0, weights_1, lrate, Accuracy], f)
+    pickle.dump([weights_0, weights_1, lrate, Accuracy], f) 
 
 
 #%% Load previous results 
-filename='Results/New L results/1Lay1run5000_64_17size_nofeedb.pkl'
+filename='Results/New L results/1Lay1run5000_64_17size_feedb.pkl'
 with open(filename, 'rb') as f:  # Python 3: open(..., 'rb')
     weights_0, weights_1, lrate, Accuracy = pickle.load(f)
 
