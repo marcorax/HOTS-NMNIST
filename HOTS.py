@@ -443,128 +443,7 @@ with keyboard.Listener(on_press=on_press) as listener:
             print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
             print("Prediction: "+result+str(label))
     listener.join()
-#%% New Learning rule (under work) two layers
-from pynput import keyboard
 
-
-weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
-weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
-
-# lrate_non_boost = 0.009
-lrate_non_boost = 0.09
-# lrate_boost = 1
-lrate_boost = 0.5
-
-
-lrate=lrate_boost
-
-# Kmeans_features = H_clusters[0][0]
-
-nrows = 4
-ncols = int(np.ceil(n_clusters[0]/nrows))
-fig, axs = plt.subplots(nrows, ncols)
-fig.suptitle("New L Features")
-
-
-# label=0
-# recording=0
-random_rec_pick=np.mgrid[:10, :files_dataset_train].reshape(2,-1).T
-np.random.shuffle(random_rec_pick)
-rel_accuracy = [ ]
-train_net_response_0 = copy.deepcopy(train_set_orig)
-
-
-#initialize weights 0 to surfaces:
-
-for cluster_i in range(n_clusters[0]):
-    label=np.random.randint(0,9)
-    recording=np.random.randint(0,len(train_surfs_0[label]))
-    surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
-    weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
-
-def on_press(key):
-    global pause_pressed
-    global lrate
-    global lrate_non_boost
-    print('{0} pressed'.format(
-        key))
-    if key.char == ('p'):
-        pause_pressed=True
-    if key.char == ('s'):
-        lrate=lrate_non_boost
-        
-pause_pressed=False    
-with keyboard.Listener(on_press=on_press) as listener:
-    for epoch in range(100):
-        progress=0
-        for label,recording in random_rec_pick:
-            rec_distances_0=np.sum((train_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])**2,axis=(1,2))
-            rec_closest_0=np.argmin(rec_distances_0,axis=1)
-            rec_closest_0_one_hot = np.zeros([len(rec_closest_0),n_clusters[0]])
-            rec_closest_0_one_hot[np.arange(len(rec_closest_0)),rec_closest_0]=1
-            u_sampled_x=train_set_orig[label][recording][0]//u
-            u_sampled_y=train_set_orig[label][recording][1]//u
-            train_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
-                                            tau[layer+1], n_pol[layer+1])
-            
-            train_net_response_0[label][recording][2] = rec_closest_0
-            timestamps = train_net_response_0[label][recording][3]
-            
-            rec_distances_1=np.sum((train_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
-            rec_closest_1=np.argmin(rec_distances_1,axis=1)
-            train_surfs_1_recording_fb=fb_surfaces([u_sampled_x, u_sampled_y, rec_closest_1, train_set_orig[label][recording][3]], 10,\
-                                            tau[layer])
-        
-            elem_distances_1 = (train_surfs_1_recording[:,:,:,:]-weights_1[None,:,:,:,label])
-            weights_1[:,:,:,label]+=lrate*np.mean(elem_distances_1[:],axis=0)
-           
-            # norm= 10-1
-            norm = 10-1
-            y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1))**7 #normalized by activation
-            y_som_dt = np.zeros(len(y_som))
-            y_som_dt[1:-1] = y_som[1:-1]-y_som[0:-2]/((timestamps[1:-1]+1-timestamps[0:-2])*0.001)
-            # y_som=train_surfs_1_recording_fb[:,label]-1
-            y_corr=y_som*(y_som>0)
-            # y_corr=1*(y_som==0)
-
-            # y_som_rect=y_som*(y_som>0)
-            # y_corr=y_som_rect*(y_som_rect>np.mean(y_som))
-            y_anticorr = y_som*(y_som<0)
-            # y_anticorr = -1*(y_som<0)
-
-            print("Y-som, mean: "+str(np.mean(y_som))+"   Y-corr, max: "+str(np.max(y_corr))+"   Y-corr, mean: "+str(np.mean(y_corr)) )
-            elem_distances_0 = (train_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])
-            # Keep only the distances for winners
-            elem_distances_0=elem_distances_0[:,:,:,:]*rec_closest_0_one_hot[:,None,None,:]
-            #weights_0[:,:,:]+=lrate*(np.sum(y_corr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1))
-            tmp = (y_corr[:,None,None]*train_surfs_0[label][recording][:])#/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1)
-            # weights_0[:,:,:]+=0.001*lrate*(np.sum(y_anticorr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_anticorr[:,None],axis=0)+1))
-            #NO FEEDBACK
-            weights_0[:,:,:]+=lrate*(np.mean(elem_distances_0[:],axis=0))
-    
-            if pause_pressed == True:     
-                for feat in range(n_clusters[0]):
-                    axs[(feat//ncols)-1, feat%ncols].imshow(weights_0[:,:,feat] )
-                    plt.draw()
-                plt.pause(5)
-                pause_pressed=False
-            
-                
-            rec_closest_1_one_hot = np.zeros([len(rec_closest_1),10])
-            rec_closest_1_one_hot[np.arange(len(rec_closest_1)),rec_closest_1]=1
-            class_rate=np.sum(rec_closest_1_one_hot,axis=0)
-                
-            progress+=1/len(random_rec_pick)
-            if np.argmax(class_rate)==label:
-                result = "Correct"
-            else:
-                result = "Wrong"
-                
-            
-                
-            print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
-            print("Prediction: "+result+str(label))
-    listener.join()
 #%% Testing
 
 test_net_response_0 = []
@@ -594,19 +473,20 @@ print("relative accuracy = "+str(Accuracy))
 
 #%% Testing three layers
 
-test_net_response_0 = copy.deepcopy(test_set_orig)
+test_net_response_0 = []
 
 
 Accuracy=0
 for label in range(10):
-    for recording in range(len(test_net_response_0[label])):
+    test_net_response_0_label = []
+    for recording in range(files_dataset_test):
         rec_distances_0=np.sum((test_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])**2,axis=(1,2))
         rec_closest_0=np.argmin(rec_distances_0,axis=1)
         u_sampled_x=test_set_orig[label][recording][0]//u
         u_sampled_y=test_set_orig[label][recording][1]//u
         test_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, test_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
                                         tau[layer+1], n_pol[layer+1])
-        test_net_response_0[label][recording][2]=rec_closest_0
+        test_net_response_0_label.append([test_set_orig[label][recording][0],test_set_orig[label][recording][1], rec_closest_0, test_set_orig[label][recording][3]])
         rec_distances_1=np.sum((test_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
         rec_closest_1=np.argmin(rec_distances_1,axis=1)
         rec_closest_1_one_hot = np.zeros([len(rec_closest_1),10])
@@ -614,8 +494,10 @@ for label in range(10):
         class_rate=np.sum(rec_closest_1_one_hot,axis=0)
         if np.argmax(class_rate)==label:
             Accuracy+=1/(files_dataset_test*10)
+    test_net_response_0.append(test_net_response_0_label)
             
 print("relative accuracy = "+str(Accuracy))
+
 #%% Save new learning rule results (Uncomment all code to save)
 filename='Results/New L results/1Lay1run5000_64_17size_feedback.pkl'
 with open(filename, 'wb') as f: 
