@@ -325,7 +325,9 @@ weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
 weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
 
 lrate_non_boost = 0.009
-lrate_boost = 1
+# lrate_boost = 1
+
+lrate_boost = 0.1
 
 lrate=lrate_boost
 
@@ -363,6 +365,7 @@ def on_press(key):
         pause_pressed=True
     if key.char == ('s'):
         lrate=lrate_non_boost
+
         
 pause_pressed=False    
 with keyboard.Listener(on_press=on_press) as listener:
@@ -387,12 +390,13 @@ with keyboard.Listener(on_press=on_press) as listener:
         
             elem_distances_1 = (train_surfs_1_recording[:,:,:,:]-weights_1[None,:,:,:,label])
             weights_1[:,:,:,label]+=lrate*np.mean(elem_distances_1[:],axis=0)
+
            
             # norm= 10-1
             norm = 10-1
             y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1))**7 #normalized by activation
             # y_som=train_surfs_1_recording_fb[:,label]-1
-            y_corr=y_som*(y_som>0)
+            y_corr=y_som*(y_som>0)*(train_surfs_1_recording_fb[:,label]==1)
             # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
             
             # y_corr=1*(y_som==0)
@@ -410,7 +414,9 @@ with keyboard.Listener(on_press=on_press) as listener:
             # weights_0[:,:,:]+=0.001*lrate*(np.sum(y_anticorr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_anticorr[:,None],axis=0)+1))
             #NO FEEDBACK
             # weights_0[:,:,:]+=lrate*(np.mean(elem_distances_0[:],axis=0))
-    
+            
+
+
             if pause_pressed == True:     
                 for feat in range(n_clusters[0]):
                     axs[(feat//ncols)-1, feat%ncols].imshow(weights_0[:,:,feat] )
@@ -522,7 +528,7 @@ with keyboard.Listener(on_press=on_press) as listener:
             # Keep only the distances for winners
             elem_distances_0=elem_distances_0[:,:,:,:]*rec_closest_0_one_hot[:,None,None,:]
             #weights_0[:,:,:]+=lrate*(np.sum(y_corr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1))
-            tmp = (y_corr[:,None,None,None]*train_surfs_0[label][recording][:])/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1)
+            tmp = (y_corr[:,None,None]*train_surfs_0[label][recording][:])#/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1)
             # weights_0[:,:,:]+=0.001*lrate*(np.sum(y_anticorr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_anticorr[:,None],axis=0)+1))
             #NO FEEDBACK
             weights_0[:,:,:]+=lrate*(np.mean(elem_distances_0[:],axis=0))
@@ -692,6 +698,7 @@ New_L_features = weights_0
 nrows = 4
 ncols = int(np.ceil(n_clusters[0]/nrows))
 fig, axs = plt.subplots(nrows, ncols)
+
 
 for feat in range(n_clusters[0]):
     axs[(feat//ncols)-1, feat%ncols].imshow(New_L_features[:,:,feat] )
