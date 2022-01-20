@@ -567,11 +567,12 @@ with keyboard.Listener(on_press=on_press) as listener:
     listener.join()
 #%% Testing
 
-test_net_response_0 = copy.deepcopy(test_set_orig)
+test_net_response_0 = []
 
 
 Accuracy=0
 for label in range(10):
+    test_net_response_0_label = []
     for recording in range(files_dataset_test):
         rec_distances_0=np.sum((test_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])**2,axis=(1,2))
         rec_closest_0=np.argmin(rec_distances_0,axis=1)
@@ -579,7 +580,7 @@ for label in range(10):
         u_sampled_y=test_set_orig[label][recording][1]//u
         test_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, test_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
                                         tau[layer+1], n_pol[layer+1])
-        test_net_response_0[label][recording][2]=rec_closest_0
+        test_net_response_0_label.append([test_set_orig[label][recording][0],test_set_orig[label][recording][1], rec_closest_0, test_set_orig[label][recording][3]])
         rec_distances_1=np.sum((test_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
         rec_closest_1=np.argmin(rec_distances_1,axis=1)
         rec_closest_1_one_hot = np.zeros([len(rec_closest_1),10])
@@ -587,6 +588,7 @@ for label in range(10):
         class_rate=np.sum(rec_closest_1_one_hot,axis=0)
         if np.argmax(class_rate)==label:
             Accuracy+=1/(files_dataset_test*10)
+    test_net_response_0.append(test_net_response_0_label)
             
 print("relative accuracy = "+str(Accuracy))
 
@@ -597,7 +599,7 @@ test_net_response_0 = copy.deepcopy(test_set_orig)
 
 Accuracy=0
 for label in range(10):
-    for recording in range(files_dataset_test):
+    for recording in range(len(test_net_response_0[label])):
         rec_distances_0=np.sum((test_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])**2,axis=(1,2))
         rec_closest_0=np.argmin(rec_distances_0,axis=1)
         u_sampled_x=test_set_orig[label][recording][0]//u
