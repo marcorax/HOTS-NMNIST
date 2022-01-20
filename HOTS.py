@@ -344,7 +344,7 @@ fig.suptitle("New L Features")
 random_rec_pick=np.mgrid[:10, :files_dataset_train].reshape(2,-1).T
 np.random.shuffle(random_rec_pick)
 rel_accuracy = [ ]
-train_net_response_0 = copy.deepcopy(train_set_orig)
+# train_net_response_0 = copy.deepcopy(train_set_orig)
 
 
 #initialize weights 0 to surfaces:
@@ -382,7 +382,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                                             tau[layer+1], n_pol[layer+1])
             timestamps = train_net_response_0[label][recording][3]
 
-            train_net_response_0[label][recording][2] = rec_closest_0
+            # train_net_response_0[label][recording][2] = rec_closest_0
             
             rec_distances_1=np.sum((train_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
             rec_closest_1=np.argmin(rec_distances_1,axis=1)
@@ -511,9 +511,8 @@ with open(filename, 'rb') as f:  # Python 3: open(..., 'rb')
 
 
 
-#%% calculate net responses given weights
+#%% calculate net responses given weights train
 train_net_response_0 = copy.deepcopy(train_set_orig)
-test_net_response_0 = copy.deepcopy(train_set_orig)
 
 def hidden_response_generation(recording_dataset, surfaces, features):
     rec_distances_0=np.sum((surfaces[:,:,:,None]-features[None,:,:,:])**2,axis=(1,2))
@@ -522,8 +521,18 @@ def hidden_response_generation(recording_dataset, surfaces, features):
 
 for label in range(10):
     train_response_0_label = Parallel(n_jobs=1)(delayed(hidden_response_generation)(train_net_response_0[label][recording], train_surfs_0[label][recording], weights_0) for recording in range(files_dataset_train))
-    test_response_0_label = Parallel(n_jobs=1)(delayed(hidden_response_generation)(test_net_response_0[label][recording], test_surfs_0[label][recording], weights_0) for recording in range(files_dataset_test))
     train_net_response_0[label]=train_response_0_label
+    
+#%% calculate net responses given weights test
+test_net_response_0 = copy.deepcopy(test_set_orig)
+
+def hidden_response_generation(recording_dataset, surfaces, features):
+    rec_distances_0=np.sum((surfaces[:,:,:,None]-features[None,:,:,:])**2,axis=(1,2))
+    rec_closest_0=np.argmin(rec_distances_0,axis=1)         
+    return [recording_dataset[0],recording_dataset[1], rec_closest_0, recording_dataset[3]]
+
+for label in range(10):
+    test_response_0_label = Parallel(n_jobs=1)(delayed(hidden_response_generation)(test_net_response_0[label][recording], test_surfs_0[label][recording], weights_0) for recording in range(files_dataset_test))
     test_net_response_0[label]=test_response_0_label
 
 #%% Histogram and SVC on classes
