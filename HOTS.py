@@ -324,7 +324,7 @@ from pynput import keyboard
 weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
 weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
 
-lrate_non_boost = 0.009
+lrate_non_boost = 0.03
 # lrate_boost = 1
 
 lrate_boost = 0.1
@@ -380,7 +380,8 @@ with keyboard.Listener(on_press=on_press) as listener:
             u_sampled_y=train_set_orig[label][recording][1]//u
             train_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
                                             tau[layer+1], n_pol[layer+1])
-            
+            timestamps = train_net_response_0[label][recording][3]
+
             train_net_response_0[label][recording][2] = rec_closest_0
             
             rec_distances_1=np.sum((train_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
@@ -394,9 +395,11 @@ with keyboard.Listener(on_press=on_press) as listener:
            
             # norm= 10-1
             norm = 10-1
-            y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1))**7 #normalized by activation
+            y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1)) #normalized by activation
             # y_som=train_surfs_1_recording_fb[:,label]-1
-            y_corr=y_som*(y_som>0)*(train_surfs_1_recording_fb[:,label]==1)
+            y_som_dt = np.zeros(len(y_som))
+            y_som_dt[1:-1] = (y_som[1:-1]-y_som[0:-2])/((timestamps[1:-1]+1-timestamps[0:-2])*0.001)
+            y_corr=y_som_dt*(y_som_dt>0)*(train_surfs_1_recording_fb[:,label]==1)
             # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
             
             # y_corr=1*(y_som==0)
@@ -447,8 +450,11 @@ from pynput import keyboard
 weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
 weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
 
-lrate_non_boost = 0.009
-lrate_boost = 1
+# lrate_non_boost = 0.009
+lrate_non_boost = 0.09
+# lrate_boost = 1
+lrate_boost = 0.5
+
 
 lrate=lrate_boost
 
@@ -502,6 +508,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                                             tau[layer+1], n_pol[layer+1])
             
             train_net_response_0[label][recording][2] = rec_closest_0
+            timestamps = train_net_response_0[label][recording][3]
             
             rec_distances_1=np.sum((train_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
             rec_closest_1=np.argmin(rec_distances_1,axis=1)
@@ -514,6 +521,8 @@ with keyboard.Listener(on_press=on_press) as listener:
             # norm= 10-1
             norm = 10-1
             y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1))**7 #normalized by activation
+            y_som_dt = np.zeros(len(y_som))
+            y_som_dt[1:-1] = y_som[1:-1]-y_som[0:-2]/((timestamps[1:-1]+1-timestamps[0:-2])*0.001)
             # y_som=train_surfs_1_recording_fb[:,label]-1
             y_corr=y_som*(y_som>0)
             # y_corr=1*(y_som==0)
