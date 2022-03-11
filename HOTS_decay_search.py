@@ -15,6 +15,7 @@ and a support vector machine trained on the histograms)
 from scipy import io
 import numpy as np
 import random, gc, pickle
+import matplotlib.pyplot as plt
 
 from Libs.HOTSLib import n_mnist_rearranging, learn, infer, signature_gen,\
                  histogram_accuracy, dataset_resize,spac_downsample,recon_rates_svm
@@ -38,28 +39,29 @@ res_y = 28
 
 
 # Network parameters
-layers = 2
-surf_dim = [7,3]#lateral dimension of surfaces
-n_clusters = [16,512]
+# surf_dim = [7,3]#lateral dimension of surfaces
+surf_dim = [5,3]#lateral dimension of surfaces
+
+n_clusters = [32,512]
 n_jobs = 21  
 n_pol = [-1,16]#input polarities of each layer (if -1 polarity is discarded.)
 n_batches=[10,10]#batches of data for minibatchkmeans
-n_batches_test=[10,10]
+n_batches_test=[1,1]
 u=7 #Spatial downsample factor
-n_runs = 1 # run the code multiple times on reshuffled data to better assest performance
-seeds = [1,2,3,4,5]
-
-# HOTS tau for first and second layer.
-tau = [5000,92000]
+seed = 1
 
 
-#%%% BENCH HOTS
+#%%% BENCH HOTS layer 1
+#TODO add layer 2
 
 H_kmeansss = [] #save the networks layer for every run
 H_res = [] #save the networks layer for every run
 
+layers =  1
 
-for run in range(n_runs):
+tau1 = np.arange(500,51000,1000)
+
+for tau in tau1:
     run_euc_res = []
     run_norm_res = []
     run_svc_res = []
@@ -71,8 +73,8 @@ for run in range(n_runs):
     train_set_orig = dataset_resize(train_set_orig,res_x,res_y)
     test_set_orig = dataset_resize(test_set_orig,res_x,res_y)
     for label in range(num_labels):
-        random.Random(seeds[run]).shuffle(train_set_orig[label])
-        random.Random(seeds[run]).shuffle(test_set_orig[label])
+        random.Random(seed).shuffle(train_set_orig[label])
+        random.Random(seed).shuffle(test_set_orig[label])
         
     train_set = [train_set_orig[label][:files_dataset_train] for label in range(num_labels)]
     test_set = [test_set_orig[label][:files_dataset_test] for label in range(num_labels)]
@@ -84,13 +86,13 @@ for run in range(n_runs):
         print('##################____LAYER_'+str(layer)+'____###################')
         print('TRAIN SET LEARNING')
         [train_set, kmeans] = learn(train_set, surf_dim[layer], layer_res_x,
-                                    layer_res_y, tau[layer], n_clusters[layer],
+                                    layer_res_y, tau, n_clusters[layer],
                                     n_pol[layer], n_batches[layer], n_jobs)
         run_kmeansss.append(kmeans)
         train_set=spac_downsample(train_set,u)
         print('TEST SET INFERING')
         test_set = infer(test_set, surf_dim[layer], layer_res_x, layer_res_y,
-                         tau[layer], n_pol[layer], kmeans, n_batches_test[layer],
+                         tau, n_pol[layer], kmeans, n_batches_test[layer],
                          n_jobs)
         
         test_set=spac_downsample(test_set,u)
@@ -113,7 +115,7 @@ for run in range(n_runs):
         run_svc_res.append(rec_rate_svc)
         run_svc_norm_res.append(rec_rate_norm_svc)
         
-        print(run)
+        print('First layer tau: '+str(tau)+' microseconds')
         print('Euclidean accuracy: '+str(euc_accuracy)+'%')   
         print('Normalized euclidean accuracy: '+str(norm_euc_accuracy)+'%')       
         print('Svc accuracy: '+str(rec_rate_svc)+'%')   
@@ -126,42 +128,41 @@ for run in range(n_runs):
         
 
 #%% Save run (Uncomment all code to save)
-filename='Results/test_result_new.pkl'
+filename='Results/lay1_tau_search_500-50000-1000.pkl'
 with open(filename, 'wb') as f: 
-    pickle.dump([H_kmeansss, H_res], f)
+    pickle.dump([H_res, tau1], f)
 
+#%% Hres plot layer 1
+plt.figure()
+H_res = np.array(H_res)
+plt.plot(tau1, H_res[:,0], label='Hist Eucl')
+plt.plot(tau1, H_res[:,1], label='Hist Norm Eucl')
+plt.plot(tau1, H_res[:,2], label='Hist SVM')
+plt.plot(tau1, H_res[:,3], label='Hist Norm SVM')
+plt.legend() 
+plt.xlabel("1st layer tau (us)")
+plt.ylabel("Accuracy")
 
+    
 #%% Load previous results 
 # filename='Results/test_result_new.pkl'
 # with open(filename, 'rb') as f:  # Python 3: open(..., 'rb')
 #     H_kmeansss, H_res = pickle.load(f)
 
-#%% Results:
-#Layer 1 mean:
-H1=np.mean(np.array(H_res)[:,0])
-#Layer 2 mean:
-H2=np.mean(np.array(H_res)[:,1])
+# #%% Results:
+# #Layer 1 mean:
+# H1=np.mean(np.array(H_res)[:,0])
+# #Layer 2 mean:
+# H2=np.mean(np.array(H_res)[:,1])
 
-#Layer 1 Standard Deviation:
-H1_sd=np.std(np.array(H_res)[:,0])
-#Layer 2 Standard Deviations:
-H2_sd=np.std(np.array(H_res)[:,1])
+# #Layer 1 Standard Deviation:
+# H1_sd=np.std(np.array(H_res)[:,0])
+# #Layer 2 Standard Deviations:
+# H2_sd=np.std(np.array(H_res)[:,1])
 
 
 
-print("Layer1 HOTS: "+str(H1)+"+-"+str(H1_sd)) #Mean result +- std   
-print("Layer2 HOTS: "+str(H2)+"+-"+str(H2_sd)) #Mean result +- std 
+# print("Layer1 HOTS: "+str(H1)+"+-"+str(H1_sd)) #Mean result +- std   
+# print("Layer2 HOTS: "+str(H2)+"+-"+str(H2_sd)) #Mean result +- std 
 
-#%% Kmeans features
-# tau_i = 1
-# run = 0 
-# layer = 0
-# features = np.reshape(H_kmeansss[tau_i][run].cluster_centers_,\
-#                       [n_clusters[layer],surf_dim[layer],surf_dim[layer]])
-    
-# fig, axs = plt.subplots(4, 8)
-# for image_number, ax in enumerate(axs.ravel()):
-#     ax.imshow(features[image_number])
-#     ax.set_title('feat '+str(image_number))
 
-# fig.suptitle("HOTS features", fontsize=16)
