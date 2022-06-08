@@ -29,7 +29,7 @@ plt.style.use("dark_background")
 
 from Libs.HOTSLib import n_mnist_rearranging, learn, infer, signature_gen,\
                  histogram_accuracy, dataset_resize,spac_downsample,recon_rates_svm,\
-                 surfaces, fb_surfaces
+                 surfaces, fb_surfaces, all_surfaces
 
 #%% Data loading and parameters setting
             
@@ -40,8 +40,8 @@ n_recording_labels_train=[len(train_set_orig[label]) for label in range(len(trai
 n_recording_labels_test=[len(test_set_orig[label]) for label in range(len(train_set_orig))]
 
 # using a subset of N-MNIST to lower memory usage
-files_dataset_train = min(n_recording_labels_train)//10
-files_dataset_test = min(n_recording_labels_test)//10
+files_dataset_train = min(n_recording_labels_train)//15 #10
+files_dataset_test = min(n_recording_labels_test)//15 #10 
 num_labels = len(test_set_orig)
 
 # N-MNIST resolution 
@@ -63,6 +63,7 @@ n_pol = [-1,64]#input polarities of each layer (if -1 polarity is discarded.)
 n_batches=[1,1]#batches of data for minibatchkmeans
 n_batches_test=[1,1]
 u=7 #Spatial downsample factor
+#u=4 for size 7 case
 n_runs = 1 # run the code multiple times on reshuffled data to better assest performance
 seeds = [1,2,3,4,5]
 
@@ -317,24 +318,23 @@ for epoch in range(100):
         print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
         print("Prediction: "+result+str(label))
 
-
 #%% New Learning rule (under work) two layers
 from pynput import keyboard
 
 
 weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
-weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
+weights_1 = np.random.rand(n_clusters[0], res_y//u, res_x//u, 10) #classifier
 
-lrate_non_boost = 0.009
+lrate_non_boost = 0.03
 # lrate_boost = 1
 
-lrate_boost = 0.09
+lrate_boost = 0.7
 
 lrate=lrate_boost
 
 # Kmeans_features = H_clusters[0][0]
 
-nrows = 4
+nrows = 8
 ncols = int(np.ceil(n_clusters[0]/nrows))
 fig, axs = plt.subplots(nrows, ncols)
 fig.suptitle("New L Features")
@@ -350,11 +350,11 @@ rel_accuracy = [ ]
 
 #initialize weights 0 to surfaces:
 
-# for cluster_i in range(n_clusters[0]):
-#     label=np.random.randint(0,9)
-#     recording=np.random.randint(0,len(train_surfs_0[label]))
-#     surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
-#     weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
+for cluster_i in range(n_clusters[0]):
+    label=np.random.randint(0,9)
+    recording=np.random.randint(0,len(train_surfs_0[label]))
+    surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
+    weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
 
 def on_press(key):
     global pause_pressed
@@ -379,8 +379,11 @@ with keyboard.Listener(on_press=on_press) as listener:
             rec_closest_0_one_hot[np.arange(len(rec_closest_0)),rec_closest_0]=1
             u_sampled_x=train_set_orig[label][recording][0]//u
             u_sampled_y=train_set_orig[label][recording][1]//u
-            train_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
-                                            tau[layer+1], n_pol[layer+1])
+            # train_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
+            #                                 tau[layer+1], n_pol[layer+1])
+            
+            train_surfs_1_recording=all_surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u,\
+                                        tau[layer+1], n_pol[layer+1])
             
             timestamps = train_set_orig[label][recording][3]
 
@@ -400,9 +403,8 @@ with keyboard.Listener(on_press=on_press) as listener:
             y_som=(train_surfs_1_recording_fb[:,label]-np.sum((train_surfs_1_recording_fb[:,np.arange(10)!=label]/norm),axis=1)) #normalized by activation
             # y_som=train_surfs_1_recording_fb[:,label]-1
             y_som_dt = np.zeros(len(y_som))
-            y_som_dt[1:-1] = (y_som[1:-1]-y_som[0:-2])/((timestamps[1:-1]+1-timestamps[0:-2])*0.001)
-            # y_corr=y_som_dt*(y_som_dt>0)*(train_surfs_1_recording_fb[:,label]==1) # Derivative FB
-            y_corr=y_som*(y_som>0)*(train_surfs_1_recording_fb[:,label]==1) # Proprortional FB
+            y_som_dt[1:] = (y_som[1:]-y_som[:-1])/((timestamps[1:]+1-timestamps[:-1])*0.001)
+            y_corr=y_som_dt*(y_som_dt>0)*(train_surfs_1_recording_fb[:,label]==1)
             # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
             
             # y_corr=1*(y_som==0)
@@ -416,7 +418,12 @@ with keyboard.Listener(on_press=on_press) as listener:
             elem_distances_0 = (train_surfs_0[label][recording][:,:,:,None]-weights_0[None,:,:,:])
             # Keep only the distances for winners
             elem_distances_0=elem_distances_0[:,:,:,:]*rec_closest_0_one_hot[:,None,None,:]
-            weights_0[:,:,:]+=lrate*(np.sum(y_corr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1))
+            # y_corr[y_corr>1] = 1
+            #TODO the way I am normalizng the effect of the feedback kinda makes all number learn the same (the ones with less average feedback learn the same as the ones with more)
+            #I should make sure to learn more from wrong examples than right ones.
+            norm_factor = (np.sum(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1) #average
+            #norm_factor = (np.max(rec_closest_0_one_hot*y_corr[:,None],axis=0)+1) #max
+            weights_0[:,:,:]+=lrate*(np.sum(y_corr[:,None,None,None]*elem_distances_0[:],axis=0))/norm_factor
             # weights_0[:,:,:]+=0.001*lrate*(np.sum(y_anticorr[:,None,None,None]*elem_distances_0[:],axis=0)/(np.sum(rec_closest_0_one_hot*y_anticorr[:,None],axis=0)+1))
             #NO FEEDBACK
             # weights_0[:,:,:]+=lrate*(np.mean(elem_distances_0[:],axis=0))
@@ -446,14 +453,24 @@ with keyboard.Listener(on_press=on_press) as listener:
             print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
             print("Prediction: "+result+str(label))
     listener.join()
-    
-    
-#%% Plot the feedback
-plt.figure()
-plt.plot(timestamps,y_som)
-plt.figure()
-plt.plot(timestamps,y_som_dt)
 
+#%% Plot feedback
+plt.figure()
+plt.plot(timestamps,y_som, label='Absolute S')
+plt.figure()
+plt.plot(timestamps,y_som_dt, label='Derivative S')
+plt.figure()
+plt.plot(timestamps, train_surfs_1_recording_fb, label=['Feedback signal '+str(i) for i in range(10)])
+plt.legend()
+
+
+plt.figure()
+plt.plot(train_surfs_1_recording_fb, label=['Feedback signal '+str(i) for i in range(10)])
+plt.legend()
+
+plt.figure()
+plt.plot(rec_distances_1, label=['Feature distances '+str(i) for i in range(10)])
+plt.legend()
 #%% Testing
 
 test_net_response_0 = []
@@ -467,7 +484,7 @@ for label in range(10):
         rec_closest_0=np.argmin(rec_distances_0,axis=1)
         u_sampled_x=test_set_orig[label][recording][0]//u
         u_sampled_y=test_set_orig[label][recording][1]//u
-        test_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, test_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
+        test_surfs_1_recording=all_surfaces([u_sampled_x, u_sampled_y, rec_closest_0, test_set_orig[label][recording][3]], res_x//u, res_y//u,\
                                         tau[layer+1], n_pol[layer+1])
         test_net_response_0_label.append([test_set_orig[label][recording][0],test_set_orig[label][recording][1], rec_closest_0, test_set_orig[label][recording][3]])
         rec_distances_1=np.sum((test_surfs_1_recording[:,:,:,:,None]-weights_1[None,:,:,:,:])**2,axis=(1,2,3))
@@ -509,13 +526,13 @@ for label in range(10):
 print("relative accuracy = "+str(Accuracy))
 
 #%% Save new learning rule results (Uncomment all code to save)
-filename='Results/New L results/1Lay1run5000_64_17size_feeedb_34Epoch48.pkl'
+filename='Results/New L results/1Lay1run5000_64_5size_feedback_fixed_outp.pkl'
 with open(filename, 'wb') as f: 
     pickle.dump([weights_0, weights_1, lrate, Accuracy], f) 
 
 
 #%% Load previous results 
-filename='Results/New L results/1Lay1run5000_64_17size_feedb.pkl'
+filename='Results/New L results/1Lay1run5000_64_17size_feedb_deriv.pkl'
 with open(filename, 'rb') as f:  # Python 3: open(..., 'rb')
     weights_0, weights_1, lrate, Accuracy = pickle.load(f)
 
@@ -607,7 +624,7 @@ plot_embedding(embedd_recording[l_index:up_index], recording_timestamps[l_index:
 #%% Plot Centroids (corr net)
 New_L_features = weights_0
 
-nrows = 4
+nrows = 8
 ncols = int(np.ceil(n_clusters[0]/nrows))
 fig, axs = plt.subplots(nrows, ncols)
 

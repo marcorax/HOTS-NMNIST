@@ -80,6 +80,64 @@ def surfaces(data_recording, res_x, res_y, surf_dim, tau, n_pol):
     return surfs
 
 
+def all_surfaces(data_recording, res_x, res_y, tau, n_pol):
+    """ 
+    This function is used to generate the time surfaces per each recording for the
+    entire layer later than centering on the reference event.
+
+    Arguments :
+        
+        data_recording: data of a single recording. List of 4 arrays [x, y, p, t]
+                        containing spatial coordinates of events (x,y), polarities
+                        (p) and timestamps (t).
+                        
+        res_x, res_y: the x and y pixel resolution of the input data. 
+                        
+        tau : temporal coefficient for the exp decay.
+       
+        n_pol: number of polarities of the data_recording, if =-1, polarity info
+               will be discarded (useful for the first layer usually).
+               
+    Returns: 
+        surfs: array containing all the time surfaces created using the input data.
+               -dimension of surf if pol is a int>0 [n_events, n_pol, res_x, res_y]
+               -dimension of surf if pol is -1 [n_events, res_x, res_y]
+        
+    """
+    
+    n_events=len(data_recording[3])
+
+    # Allocate some memory
+    if n_pol == -1:
+        surface = np.zeros([res_y, res_x], dtype=np.float32) #zeropadding the borders
+        surfs = np.zeros([n_events, res_y, res_x], dtype=np.float32)
+        timestamp_table = np.ones([res_y, res_x])*-1 # (Starting negative values will keep the decay map on FALSE STATES) 
+
+    else:
+        surface = np.zeros([n_pol, res_y, res_x], dtype=np.float32) #zeropadding the borders
+        surfs = np.zeros([n_events, n_pol,  res_y, res_x], dtype=np.float32)
+        timestamp_table = np.ones([n_pol, res_y, res_x])*-1 # (Starting negative values will keep the decay map on FALSE STATES) 
+
+    
+    for event in range(n_events):
+        new_ts = data_recording[3][event]
+        new_x = int(data_recording[0][event])#offsets to account padding
+        new_y = int(data_recording[1][event])#offsets to account padding
+        decay_map = ((new_ts-timestamp_table)>0)*(timestamp_table>0) # map used to identify the regime for each pixel, 1 if decaying
+        #surface = np.exp(((timestamp_table-new_ts)*decay_map)/tau)*decay_map not include new event 
+        
+        # Update surfs and tables. 
+        if n_pol == -1: 
+            timestamp_table[new_y,new_x] = new_ts
+        else:
+            new_pol = int(data_recording[2][event])#offsets to account padding                      
+            timestamp_table[new_pol,new_y,new_x] = new_ts
+
+        surface = np.exp(((timestamp_table-new_ts)*decay_map)/tau)*decay_map # include new event 
+        surfs[event] = surface
+        
+    return surfs
+
 def fb_surfaces(data_recording, n_clusters, tau):
     """ 
     This function is used to generate the time surfaces used for feedback per each recording.
