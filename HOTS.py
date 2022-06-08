@@ -317,6 +317,7 @@ for epoch in range(100):
         print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
         print("Prediction: "+result+str(label))
 
+
 #%% New Learning rule (under work) two layers
 from pynput import keyboard
 
@@ -324,10 +325,10 @@ from pynput import keyboard
 weights_0 = np.random.rand(surf_dim[0], surf_dim[0], n_clusters[0])
 weights_1 = np.random.rand(n_clusters[0], surf_dim[1], surf_dim[1], 10) #classifier
 
-lrate_non_boost = 0.03
+lrate_non_boost = 0.009
 # lrate_boost = 1
 
-lrate_boost = 0.1
+lrate_boost = 0.09
 
 lrate=lrate_boost
 
@@ -349,11 +350,11 @@ rel_accuracy = [ ]
 
 #initialize weights 0 to surfaces:
 
-for cluster_i in range(n_clusters[0]):
-    label=np.random.randint(0,9)
-    recording=np.random.randint(0,len(train_surfs_0[label]))
-    surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
-    weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
+# for cluster_i in range(n_clusters[0]):
+#     label=np.random.randint(0,9)
+#     recording=np.random.randint(0,len(train_surfs_0[label]))
+#     surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
+#     weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
 
 def on_press(key):
     global pause_pressed
@@ -380,7 +381,8 @@ with keyboard.Listener(on_press=on_press) as listener:
             u_sampled_y=train_set_orig[label][recording][1]//u
             train_surfs_1_recording=surfaces([u_sampled_x, u_sampled_y, rec_closest_0, train_set_orig[label][recording][3]], res_x//u, res_y//u, surf_dim[layer+1],\
                                             tau[layer+1], n_pol[layer+1])
-            timestamps = train_net_response_0[label][recording][3]
+            
+            timestamps = train_set_orig[label][recording][3]
 
             # train_net_response_0[label][recording][2] = rec_closest_0
             
@@ -399,7 +401,8 @@ with keyboard.Listener(on_press=on_press) as listener:
             # y_som=train_surfs_1_recording_fb[:,label]-1
             y_som_dt = np.zeros(len(y_som))
             y_som_dt[1:-1] = (y_som[1:-1]-y_som[0:-2])/((timestamps[1:-1]+1-timestamps[0:-2])*0.001)
-            y_corr=y_som_dt*(y_som_dt>0)*(train_surfs_1_recording_fb[:,label]==1)
+            # y_corr=y_som_dt*(y_som_dt>0)*(train_surfs_1_recording_fb[:,label]==1) # Derivative FB
+            y_corr=y_som*(y_som>0)*(train_surfs_1_recording_fb[:,label]==1) # Proprortional FB
             # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
             
             # y_corr=1*(y_som==0)
@@ -443,6 +446,13 @@ with keyboard.Listener(on_press=on_press) as listener:
             print("Epoch "+str(epoch)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(class_rate[label]-np.max(class_rate[np.arange(10)!=label])))
             print("Prediction: "+result+str(label))
     listener.join()
+    
+    
+#%% Plot the feedback
+plt.figure()
+plt.plot(timestamps,y_som)
+plt.figure()
+plt.plot(timestamps,y_som_dt)
 
 #%% Testing
 
@@ -499,7 +509,7 @@ for label in range(10):
 print("relative accuracy = "+str(Accuracy))
 
 #%% Save new learning rule results (Uncomment all code to save)
-filename='Results/New L results/1Lay1run5000_64_17size_feedback.pkl'
+filename='Results/New L results/1Lay1run5000_64_17size_feeedb_34Epoch48.pkl'
 with open(filename, 'wb') as f: 
     pickle.dump([weights_0, weights_1, lrate, Accuracy], f) 
 
