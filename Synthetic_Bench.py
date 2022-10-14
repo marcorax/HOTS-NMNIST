@@ -204,6 +204,8 @@ tau = 5000
 n_pol = 3
 
 data_surf=[]
+
+characters_ts = [[], [], []]
 for i_file in range(n_files):
     
     events = data_events[i_file]
@@ -213,6 +215,13 @@ for i_file in range(n_files):
     #keep only the surface of the character for which the event as being generated
     surfs_cut = surfs[np.arange(len(surfs)),events[2],:,:]
     data_surf.append(surfs_cut)
+    for i,event in enumerate(events[2]):
+        if event == 0 or event == 2:
+            characters_ts[0].append(surfs_cut[i])
+        if event == 1:
+            characters_ts[data_labels[i_file]+1].append(surfs_cut[i])
+            
+        
 
 #pattern plot to check all is correct
 surf_i = 100
@@ -220,6 +229,10 @@ concat_surf = np.reshape(surfs, [len(surfs),15,5])
 plt.figure()
 plt.imshow(concat_surf[surf_i])
 concat_all_surfs = np.concatenate(data_surf)
+
+#%% Calculations on average charcters ts (to get ideal centroids and thresholds)
+average_character_ts = [np.mean(characters_ts[ch],0) for ch in range(len(characters_ts))]
+std_character_ts = [np.std(characters_ts[ch]) for ch in range(len(characters_ts))]
 
 #%% Kmeans clustering
 n_k_clusters=2
@@ -1547,3 +1560,4 @@ plt.plot(data_events[file][3],y_som_history)
 
 plt.figure()
 plt.plot(data_events[file][3],y_som_dt_history)
+
