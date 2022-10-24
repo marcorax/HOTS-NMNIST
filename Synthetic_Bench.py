@@ -231,8 +231,54 @@ plt.imshow(concat_surf[surf_i])
 concat_all_surfs = np.concatenate(data_surf)
 
 #%% Calculations on average charcters ts (to get ideal centroids and thresholds)
+# and also a low dimensional plot
 average_character_ts = [np.mean(characters_ts[ch],0) for ch in range(len(characters_ts))]
-std_character_ts = [np.std(characters_ts[ch]) for ch in range(len(characters_ts))]
+std_character_max_radio= [np.max(np.sqrt(np.sum((average_character_ts[ch]-characters_ts[ch])**2,axis=(1,2)))) for ch in range(len(characters_ts))]
+
+#Triangle edges
+AB = np.sqrt(np.sum((average_character_ts[0]-average_character_ts[1])**2))
+AC = np.sqrt(np.sum((average_character_ts[0]-average_character_ts[2])**2))
+BC = np.sqrt(np.sum((average_character_ts[1]-average_character_ts[2])**2))
+
+A = (0,0)
+B = (AB,0)
+
+#I can find C as one of the intersections of the two circles
+#from https://math.stackexchange.com/questions/256100/how-can-i-find-the-points-at-which-two-circles-intersect
+Cx = ((AC**2)-(BC**2)+(AB**2))/(2*AB)
+Cy = np.sqrt(AC**2-Cx**2)
+C=(Cx,Cy)
+
+
+# plt.plot(A[0],A[1],'.')
+radioV = plt.Circle(A, std_character_max_radio[0], edgecolor='r', fill=False,
+                    linewidth = 3, alpha=1)
+centerV = plt.Circle(A, 0.1, color='r', alpha=1)
+radioSlash = plt.Circle(B, std_character_max_radio[1], edgecolor='#00ffff', 
+                        Fill=False, linewidth = 3, alpha=1)
+centerSlash = plt.Circle(B, 0.1, color='#00ffff', alpha=1)
+radioX = plt.Circle(C, std_character_max_radio[2], edgecolor ='#000033',
+                    Fill=False, linewidth = 3, alpha=1)
+centerX = plt.Circle(C, 0.1, color='#000033', alpha=1)
+
+
+
+fig_ths, ax_ths = plt.subplots()
+ax_ths.add_patch(radioV)
+ax_ths.add_patch(radioSlash)
+ax_ths.add_artist(radioX)
+
+
+ax_ths.add_patch(centerV)
+ax_ths.add_patch(centerSlash)
+ax_ths.add_artist(centerX)
+
+
+
+#Use adjustable='box-forced' to make the plot area square-shaped as well.
+ax_ths.set_aspect('equal', adjustable='datalim')
+ax_ths.plot()   #Causes an autoscale update.
+fig_ths.show()
 
 #%% Kmeans clustering
 n_k_clusters=2
@@ -356,6 +402,255 @@ for i_centroid in range(n_k_clusters):
 fig, axs = plt.subplots(n_k_clusters)
 for pol_i in range(n_k_clusters):
     axs[pol_i].imshow(np.reshape(patterns[pol_i], [5,5]))    
+
+
+#%% New Learning rule find the trhesholds
+
+from pynput import keyboard
+
+surf_x = 5
+surf_y = 5
+n_clusters = 2
+
+n_words = 2
+
+weights_0 = np.random.rand(surf_x, surf_y, n_clusters)
+weights_0[:,:,0] = average_character_ts[1]
+weights_0[:,:,1] = average_character_ts[2]
+
+
+weights_1 = np.zeros([n_clusters, n_pol, n_words]) #classifier
+weights_1[0,1,0]=1
+weights_1[1,1,1]=1
+
+# th_0 = np.zeros(n_clusters)+6
+th_0 = np.zeros(n_clusters)+2
+# th_0 = np.zeros(n_clusters)
+# th_0[0]=2
+
+
+circle_th0 = plt.Circle(B, th_0[0], color='#00ffff', alpha=0.2)
+circle_th1 = plt.Circle(C, th_0[1], color='#000033', alpha=0.2)
+
+ax_ths.add_patch(circle_th0)
+ax_ths.add_artist(circle_th1)
+
+fig_ths.show()
+
+y_som_old=0
+dt_y_som=0
+
+# lrate_non_boost = 0.004 
+lrate_non_boost = 0.004 
+# lrate_boost = 1
+
+# lrate_boost = 0.003
+lrate_boost = 0.01
+
+
+lrate=lrate_boost
+
+n_all_events = len(concat_all_surfs)
+
+
+
+#initialize weights 0 to surfaces:
+
+# for cluster_i in range(n_clusters[0]):
+#     label=np.random.randint(0,9)
+#     recording=np.random.randint(0,len(train_surfs_0[label]))
+#     surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
+#     weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
+
+def on_press(key):
+    global pause_pressed
+    global lrate
+    global lrate_non_boost
+    global th_0
+    print('{0} pressed'.format(
+        key))
+    if key.char == ('p'):
+        pause_pressed=True
+    if key.char == ('s'):
+        lrate=lrate_non_boost
+        # th_0 = np.zeros(n_clusters)+4
+
+
+
+time_context_1 = np.zeros([n_clusters, n_pol],dtype=int)
+time_context_fb = np.zeros([n_words],dtype=int)
+
+tau_1 = 5
+        
+pause_pressed=False    
+with keyboard.Listener(on_press=on_press) as listener:
+    
+    for epoch in range(3):   
+        for word_i in range(len(data_surf)):
+            n_events = len(data_surf[word_i])
+            word_surf = data_surf[word_i]
+            progress=0
+            rel_accuracy = 0
+    
+            #event mask used to avoid exponentialdecay calculation forpixel 
+            # that didnot generate an event yet
+            mask_start_1 = np.zeros([n_clusters, n_pol],dtype=int)
+            mask_start_fb = np.zeros([n_words],dtype=int)
+            y_som_old=0
+            y_som=0
+            y_som_dt=0        
+            for ts_i in range(n_events):
+                
+                label = data_labels[word_i]
+                
+                rec_distances_0=np.sum((word_surf[ts_i,:,:,None]-weights_0[:,:,:])**2,axis=(0,1))
+                
+                # rec_closest_0=np.argmin(rec_distances_0,axis=0)
+                #new_fb
+                rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
+                rec_closest_0_one_hot = np.zeros([n_clusters])
+                rec_closest_0_one_hot[rec_closest_0]=1
+                
+                if (rec_distances_0[rec_closest_0]-th_0[rec_closest_0])<0:
+    
+    
+                    
+                    ref_pol = data_events[word_i][2][ts_i]
+                    ref_ts =  data_events[word_i][3][ts_i]
+                    time_context_1[rec_closest_0,ref_pol] = ref_ts
+                    mask_start_1[rec_closest_0,ref_pol]=1
+                    
+                    ts_lay_1 = np.exp((time_context_1-ref_ts)*mask_start_1/tau_1)*mask_start_1                
+                                
+                    
+                    rec_distances_1=np.sum((ts_lay_1[:,:,None]-weights_1[:,:,:])**2,axis=(0,1))
+                    rec_closest_1=np.argmin(rec_distances_1,axis=0)
+                    
+    
+                    time_context_fb[rec_closest_1] = ref_ts
+                    mask_start_fb[rec_closest_1]=1
+                    
+                    train_surfs_1_recording_fb = np.exp((time_context_fb-ref_ts)*mask_start_fb/tau_1)*mask_start_fb                
+                                
+                
+    
+        
+                   
+                    norm = n_words-1
+                    #supervised
+                    y_som=(train_surfs_1_recording_fb[label]-np.sum((train_surfs_1_recording_fb[np.arange(n_words)!=label]/norm),axis=0)) #normalized by activation
+                    
+                    #unsupervised
+                    # y_som=(train_surfs_1_recording_fb[label]-np.sum((train_surfs_1_recording_fb[np.arange(n_words)!=rec_closest_1]/norm),axis=0)) #normalized by activation
+    
+                    
+                    dt_y_som = y_som - y_som_old
+                    y_som_old = y_som
+                    
+                    # y_som_dt[1:] = (y_som[1:]-y_som[:-1])/((timestamps[1:]+1-timestamps[:-1])*0.001)
+                    y_corr=y_som*(y_som>0)*(train_surfs_1_recording_fb[label]==1)
+                    # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
+                    
+                    rec_closest_1_one_hot = np.zeros([n_words])
+                    rec_closest_1_one_hot[rec_closest_1]=1
+                    class_rate=np.sum(rec_closest_1_one_hot,axis=0)
+                        
+                    progress+=1/n_events
+                    if rec_closest_1==label:
+                        result = "Correct"
+                        rel_accuracy += 1/n_events
+    
+                    else:
+                        result = "Wrong"
+                        
+                    print("Epoch "+str(word_i)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(rel_accuracy))
+                    print("Prediction: "+result+str(label))
+    
+                    #supervised
+                    elem_distances_1 = (ts_lay_1[:,:]-weights_1[:,:,label])
+                    # weights_1[:,:,label]+=lrate*elem_distances_1[:]
+                    
+                    #unsupervised
+                    # elem_distances_1 = (ts_lay_1[:,:]-weights_1[:,:,rec_closest_1])
+                    # weights_1[:,:,rec_closest_1]+=lrate*elem_distances_1[:]              
+                
+                    
+                    #### YOU ARE IN THE RIGHT DIRECTION, CONTINUE HERE AND DECIDE WHAT TO DO WHEN THE EVENT IS DROPPED
+                    #### MAYBE ADD A T CHaracter so you can do VTV as a new word
+                    #new fb
+                    # th_0[rec_closest_0] -= 0.32*expit(y_som)*(y_som>0)
+                    # th_0[rec_closest_0] -= 0.90*expit(dt_y_som)*(dt_y_som>0)
+    
+                    # th_0[rec_closest_0] += 0.01*dt_y_som * (dt_y_som<0)
+                    # th_0[rec_closest_0] += 0.01*dt_y_som 
+
+
+                    # th_0[rec_closest_0] += 0.1*expit(100*dt_y_som)*(dt_y_som>0p) - 0.1*expit(-100*dt_y_som)*(dt_y_som<0) 
+                    # th_0[rec_closest_0] -= dt_y_som
+    
+    
+    
+                    # th_0[rec_closest_0] -= 0.32*expit(np.abs(y_som))*(y_som!=0)
+    
+                    th_0[rec_closest_0] +=  0.001*th_0[rec_closest_0]*(y_som<=0) - 0.4*expit(y_som)*(y_som>0)
+    
+                    
+                    # y_corr=1*(y_som==0)
+        
+                    # y_som_rect=y_som*(y_som>0)
+                    # y_corr=y_som_rect*(y_som_rect>np.mean(y_som))
+                    # y_anticorr = y_som*(y_som<0)
+                    # y_anticorr = -1*(y_som<0)
+        
+                    print("Y-som: "+str(y_som)+" dt Y-som: "+str(dt_y_som)+" Closest_center: "+str(rec_closest_0))
+                    print(th_0)
+                    # print("Y-som: "+str(y_som)+"   pY-corr: "+str(y_corr))
+    
+                    
+                    
+                    elem_distances_0 = (word_surf[ts_i,:,:,None]-weights_0[:,:,:])
+                    # Keep only the distances for winners
+                    elem_distances_0=elem_distances_0[:,:,:]*rec_closest_0_one_hot[None,None,:]
+                    # y_corr[y_corr>1] = 1
+                    #TODO the way I am normalizng the effectp of the feedback kinda makes all number learn the same (the ones with less average feedback learn the same as the ones with more)
+                    #I should make sure to learn more from wrong examples than right ones.
+                    # weights_0[:,:,:]+=lrate*(y_som*elem_distances_0[:])#/norm_factor
+                    # y_som = np.abs(y_som)`
+                    # weights_0[:,:,:]+=lrate*(y_som*(y_som>0)*elem_distances_0[:])#/norm_factor
+                    # weights_0[:,:,:]+=lrate*(y_som*elem_distances_0[:])#/norm_factor
+                    # weights_0[:,:,:]+=lrate*(dt_y_som*elem_distances_0[:])#/norm_factor
+                    # weights_0[:,:,:]+=lrate*(dt_y_som*(dt_y_som>0)*elem_distances_0[:])#/norm_factor
+                    
+                # alpha = 0.99999
+                # th_0[rec_closest_0] =  alpha*th_0[rec_closest_0] + (1-alpha)*rec_distances_0[rec_closest_0]
+
+    
+                # else:
+                #     th_0 += 0.000003
+    
+    
+                #NO FEEDBACK
+                # weights_0[:,:,:]+=lrate*elem_distances_0[:]
+    
+                # th_0[np.arange(n_clusters)!=rec_closest_0] += 0.001*th_0[np.arange(n_clusters)!=rec_closest_0]
+    
+    
+                if pause_pressed == True:    
+                    circle_th0.radius = th_0[0]
+                    circle_th1.radius = th_0[1]
+                    fig_ths.show()
+                    plt.pause(5)
+                    pause_pressed=False
+                    
+                        
+                        
+                    
+                        
+
+    # listener.join()
+    
+# fb_selected_weights_0 = weights_0
+# fb_selected_weights_1 = weights_1
 
 
 #%% New Learning rule (at the time of the proposal) two layers differential
