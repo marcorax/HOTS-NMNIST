@@ -749,11 +749,13 @@ time_context_1 = np.zeros([n_clusters, n_pol],dtype=int)
 time_context_fb = np.zeros([n_words],dtype=int)
 
 tau_1 = 5
+tau_1_fb = 5
 
-lrate_1 =  0.003
+
+lrate_1 =  0.001
 lrate_0 = lrate_1
 
-lrate_th_1 = lrate_1
+lrate_th_1 = 2*lrate_1
         
 pause_pressed=False    
 with keyboard.Listener(on_press=on_press) as listener:
@@ -799,22 +801,19 @@ with keyboard.Listener(on_press=on_press) as listener:
                     time_context_fb[rec_closest_1] = ref_ts
                     mask_start_fb[rec_closest_1]=1
                     
-                    train_surfs_1_recording_fb = np.exp((time_context_fb-ref_ts)*mask_start_fb/tau_1)*mask_start_fb                                 
+                    train_surfs_1_recording_fb = np.exp((time_context_fb-ref_ts)*mask_start_fb/tau_1_fb)*mask_start_fb                                 
                     norm = n_words-1
                     
                     #supervised
                     y_som=(train_surfs_1_recording_fb[label]-np.sum((train_surfs_1_recording_fb[np.arange(n_words)!=label]/norm),axis=0)) #normalized by activation
                     
                     #unsupervised
-                    # y_som=(train_surfs_1_recording_fb[label]-np.sum((train_surfs_1_recording_fb[np.arange(n_words)!=rec_closest_1]/norm),axis=0)) #normalized by activation
+                    # y_som=(train_surfs_1_recording_fb[rec_closest_1]-np.sum((train_surfs_1_recording_fb[np.arange(n_words)!=rec_closest_1]/norm),axis=0)) #normalized by activation
     
                     
                     dt_y_som = y_som - y_som_old
                     y_som_old = y_som
                     
-                    # y_som_dt[1:] = (y_som[1:]-y_som[:-1])/((timestamps[1:]+1-timestamps[:-1])*0.001)
-                    y_corr=y_som*(y_som>0)*(train_surfs_1_recording_fb[label]==1)
-                    # np.random.shuffle(y_corr)# Test feedback modulation hypothesis with null class
                     
                     rec_closest_1_one_hot = np.zeros([n_words])
                     rec_closest_1_one_hot[rec_closest_1]=1
@@ -844,9 +843,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                     #threshold
                     for i_cluster in range(n_clusters):
                         if i_cluster==rec_closest_0:
-                            th_0[rec_closest_0] += lrate_th_1*dt_y_som*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
-                        elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (dt_y_som>0):
-                            th_0[i_cluster] -= lrate_th_1*dt_y_som*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
+                            th_0[rec_closest_0] += lrate_th_1*y_som*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
+                        elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0):
+                            th_0[i_cluster] -= lrate_th_1*y_som*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
 
 
                     computed_events += 1

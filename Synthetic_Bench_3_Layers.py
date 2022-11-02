@@ -216,9 +216,9 @@ for i_file in range(n_files):
             characters_ts[0].append(surfs_cut[i])
         if event == 1:#t
             characters_ts[1].append(surfs_cut[i])
-        if event == 3 or event==5:#t
+        if event == 3 or event==5:#v
             characters_ts[2].append(surfs_cut[i])
-        if event == 4:#t
+        if event == 4:#\x
             characters_ts[3+data_labels[i_file]].append(surfs_cut[i])
             
         
@@ -271,7 +271,7 @@ weights_1 = np.random.rand(n_clusters_0, word_length, n_clusters_1)
 weights_2 = np.random.rand(n_clusters_1, n_words, n_sentences) #classifier
 
 th_0 = np.zeros(n_clusters_0)+10
-th_1 = np.zeros(n_clusters_1)+10
+th_1 = np.zeros(n_clusters_1)+5
 
 
 
@@ -303,7 +303,7 @@ def on_press(key):
 
 
 time_context_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
-time_context_fb_1 = np.zeros([n_words],dtype=int)
+time_context_fb_1 = np.zeros([n_clusters_1],dtype=int)
 
 time_context_2 = np.zeros([n_clusters_1, n_words],dtype=int)
 time_context_fb_2 = np.zeros([n_sentences],dtype=int)
@@ -311,12 +311,12 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 5
 tau_2 = 5
 
-lrate_2 = 0.005
+lrate_2 = 0.003
 lrate_1 = lrate_2
 lrate_0 = lrate_2
 
-lrate_th_1 = 0.5*lrate_1
-lrate_th_0 = 0.5*lrate_0
+lrate_th_1 = lrate_1
+lrate_th_0 = lrate_0
 
 
         
@@ -333,7 +333,7 @@ with keyboard.Listener(on_press=on_press) as listener:
             #event mask used to avoid exponential decay calculation for pixel 
             # that did not generate an event yet
             mask_start_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
-            mask_start_fb_1 = np.zeros([n_words],dtype=int)
+            mask_start_fb_1 = np.zeros([n_clusters_1],dtype=int)
             
             mask_start_2 = np.zeros([n_clusters_1, n_words],dtype=int)
             mask_start_fb_2 = np.zeros([n_sentences],dtype=int)
@@ -406,7 +406,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         y_som_1=(ts_fb_lay_2[label]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=label]/norm),axis=0)) #normalized by activation
                         
                         #unsupervised
-                        # y_som=(ts_fb_lay_2[rec_closest_2]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=rec_closest_2]/norm),axis=0)) #normalized by activation
+                        # y_som_1=(ts_fb_lay_2[rec_closest_2]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=rec_closest_2]/norm),axis=0)) #normalized by activation
         
         
                         dt_y_som_1 = y_som_1 - y_som_old_1
@@ -434,7 +434,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         #unsupervised       
                         # elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_1])
-                        # weights_2[:,:,rec_closest_1]+=lrate*elem_distances_2[:]
+                        # weights_2[:,:,rec_closest_1]+=lrate_2*elem_distances_2[:]
 
                         #Layer 1
                         #weights
@@ -449,9 +449,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         #treshold
                         for i_cluster in range(n_clusters_1):
                             if i_cluster==rec_closest_1:
-                                th_1[rec_closest_1] += lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/th_1[rec_closest_1])
-                            elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0) and (dt_y_som_1>0):
-                                th_1[i_cluster] -= lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[i_cluster]-th_1[i_cluster]))/th_1[i_cluster])
+                                th_1[rec_closest_1] += lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/0.5)
+                            elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0):
+                                th_1[i_cluster] -= lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[i_cluster]-th_1[i_cluster]))/0.5)
         
         
                         #Layer 0
@@ -462,13 +462,13 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         # Keep only the distances for winners
                         elem_distances_0=elem_distances_0[:,:,:]*rec_closest_0_one_hot[None,None,:]
-                        weights_0[:,:,:]+= lrate_0*(dt_y_som_0*elem_distances_0[:]) + 0.01*lrate_0*(y_som_0*elem_distances_0[:])
+                        weights_0[:,:,:]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + 0.01*lrate_0*(y_som_0*elem_distances_0[:]))
                        
                         #treshold
                         for i_cluster in range(n_clusters_0):
                             if i_cluster==rec_closest_0:
                                 th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
-                            elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (dt_y_som_0>0):
+                            elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0):
                                 th_0[i_cluster] -= lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
                               
                         
