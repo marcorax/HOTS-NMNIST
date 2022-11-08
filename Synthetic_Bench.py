@@ -741,7 +741,6 @@ def on_press(key):
         pause_pressed=True
     if key.char == ('s'):
         lrate=lrate_non_boost
-        # th_0 = np.zeros(n_clusters)+4
 
 
 
@@ -755,7 +754,7 @@ tau_1_fb = 5
 lrate_1 =  0.001
 lrate_0 = lrate_1
 
-lrate_th_1 = 2*lrate_1
+lrate_th_1 = 1.5*lrate_1
         
 pause_pressed=False    
 with keyboard.Listener(on_press=on_press) as listener:

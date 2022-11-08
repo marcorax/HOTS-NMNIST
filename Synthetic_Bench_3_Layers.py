@@ -257,8 +257,8 @@ from pynput import keyboard
 
 surf_x = 5
 surf_y = 5
-n_clusters_0 = 2 
-n_clusters_1 = 2
+n_clusters_0 = 5 
+n_clusters_1 = 6
 
 #Each word is 3 characters long and sentences have no spaces
 #Between words
@@ -271,7 +271,7 @@ weights_1 = np.random.rand(n_clusters_0, word_length, n_clusters_1)
 weights_2 = np.random.rand(n_clusters_1, n_words, n_sentences) #classifier
 
 th_0 = np.zeros(n_clusters_0)+10
-th_1 = np.zeros(n_clusters_1)+5
+th_1 = np.zeros(n_clusters_1)+10
 
 
 
@@ -292,13 +292,16 @@ n_all_events = len(concat_all_surfs)
 
 def on_press(key):
     global pause_pressed
-    global lrate
-    global lrate_non_boost
-    global th_0
+    global print_lay
+    
     print('{0} pressed'.format(
         key))
     if key.char == ('p'):
         pause_pressed=True
+    if key.char == ('1'):
+        print_lay=1
+    if key.char == ('2'):
+        print_lay=2
 
 
 
@@ -311,16 +314,17 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 5
 tau_2 = 5
 
-lrate_2 = 0.003
-lrate_1 = lrate_2
-lrate_0 = lrate_2
+lrate_2 = 0.0001
+lrate_1 = 2*lrate_2
+lrate_0 = 2*lrate_1
 
-lrate_th_1 = lrate_1
-lrate_th_0 = lrate_0
+lrate_th_1 = 1.5*lrate_1
+lrate_th_0 = 1.5*lrate_0
 
 
         
-pause_pressed=False    
+pause_pressed=False  
+print_lay=2  
 with keyboard.Listener(on_press=on_press) as listener:
     
     for epoch in range(3):   
@@ -419,8 +423,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         norm = n_clusters_1-1
                         
                         y_som_0=(ts_fb_lay_1[rec_closest_1]-np.sum((ts_fb_lay_1[np.arange(n_clusters_1)!=rec_closest_1]/norm),axis=0)) #normalized by activation
-        
-        
+                        
+                        y_som_0  = np.sign(y_som_1)*np.abs(y_som_0)
+            
                         dt_y_som_0 = y_som_0 - y_som_old_0
                         y_som_old_0 = y_som_0
                         
@@ -449,9 +454,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         #treshold
                         for i_cluster in range(n_clusters_1):
                             if i_cluster==rec_closest_1:
-                                th_1[rec_closest_1] += lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/0.5)
+                                th_1[rec_closest_1] += lrate_th_1*y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/0.5)
                             elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0):
-                                th_1[i_cluster] -= lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[i_cluster]-th_1[i_cluster]))/0.5)
+                                th_1[i_cluster] -= lrate_th_1*y_som_1*np.exp(-np.abs((rec_distances_1[i_cluster]-th_1[i_cluster]))/0.5)
         
         
                         #Layer 0
@@ -467,9 +472,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         #treshold
                         for i_cluster in range(n_clusters_0):
                             if i_cluster==rec_closest_0:
-                                th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
+                                th_0[rec_closest_0] += lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
                             elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0):
-                                th_0[i_cluster] -= lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
+                                th_0[i_cluster] -= lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
                               
                         
 
@@ -491,12 +496,14 @@ with keyboard.Listener(on_press=on_press) as listener:
                         print("Epoch "+str(sentence_i)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(rel_accuracy))
                         print("Prediction: "+result+str(label))
                         
-                        #Layer0
-                        # print("Y-som: "+str(y_som_0)+" dt Y-som: "+str(dt_y_som_0)+" Closest_center: "+str(rec_closest_0))
-                        # print(th_0)
-                        #Layer1
-                        print("Y-som: "+str(y_som_1)+" dt Y-som: "+str(dt_y_som_1)+" Closest_center: "+str(rec_closest_1))
-                        print(th_1)
+                        if print_lay==1:
+                            #Layer0
+                            print("Y-som: "+str(y_som_0)+" dt Y-som: "+str(dt_y_som_0)+" Closest_center: "+str(rec_closest_0))
+                            print(th_0)
+                        elif print_lay==2:
+                            #Layer1
+                            print("Y-som: "+str(y_som_1)+" dt Y-som: "+str(dt_y_som_1)+" Closest_center: "+str(rec_closest_1))
+                            print(th_1)
 
                         
     
