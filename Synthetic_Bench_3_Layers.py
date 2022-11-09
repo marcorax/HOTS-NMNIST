@@ -314,9 +314,9 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 5
 tau_2 = 5
 
-lrate_2 = 0.0001
-lrate_1 = 2*lrate_2
-lrate_0 = 2*lrate_1
+lrate_2 = 0.00003
+lrate_1 = 5*lrate_2
+lrate_0 = 5*lrate_1
 
 lrate_th_1 = 1.5*lrate_1
 lrate_th_0 = 1.5*lrate_0
@@ -455,7 +455,8 @@ with keyboard.Listener(on_press=on_press) as listener:
                         for i_cluster in range(n_clusters_1):
                             if i_cluster==rec_closest_1:
                                 th_1[rec_closest_1] += lrate_th_1*y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/0.5)
-                            elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0):
+                            elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0) and (y_som_1>0):
+                            # else:
                                 th_1[i_cluster] -= lrate_th_1*y_som_1*np.exp(-np.abs((rec_distances_1[i_cluster]-th_1[i_cluster]))/0.5)
         
         
@@ -473,7 +474,8 @@ with keyboard.Listener(on_press=on_press) as listener:
                         for i_cluster in range(n_clusters_0):
                             if i_cluster==rec_closest_0:
                                 th_0[rec_closest_0] += lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
-                            elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0):
+                            elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (y_som_0>0):
+                            # else:
                                 th_0[i_cluster] -= lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
                               
                         
@@ -493,7 +495,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         progress = computed_events/n_events
                         rel_accuracy = event_accuracy/computed_events
-                        print("Epoch "+str(sentence_i)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(rel_accuracy))
+                        print("Epoch "+str(epoch)+", Sentence "+str(sentence_i)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(rel_accuracy))
                         print("Prediction: "+result+str(label))
                         
                         if print_lay==1:
