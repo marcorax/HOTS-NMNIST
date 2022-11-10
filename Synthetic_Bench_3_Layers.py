@@ -314,15 +314,17 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 5
 tau_2 = 5
 
-lrate_2 = 0.00003
-lrate_1 = 5*lrate_2
-lrate_0 = 5*lrate_1
+lrate_2 = 0.0003
+lrate_1 = 1.5*lrate_2
+lrate_0 = 1.5*lrate_1
 
-lrate_th_1 = 1.5*lrate_1
-lrate_th_0 = 1.5*lrate_0
+###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
+###seems that more units does not fix that, weirdly enough. too slow and other
+## characters creeps in.
+lrate_th_1 = 1*lrate_1
+lrate_th_0 = 1*lrate_0
 
 
-        
 pause_pressed=False  
 print_lay=2  
 with keyboard.Listener(on_press=on_press) as listener:
@@ -473,10 +475,10 @@ with keyboard.Listener(on_press=on_press) as listener:
                         #treshold
                         for i_cluster in range(n_clusters_0):
                             if i_cluster==rec_closest_0:
-                                th_0[rec_closest_0] += lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
+                                th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5) + 0.01*lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
                             elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (y_som_0>0):
                             # else:
-                                th_0[i_cluster] -= lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
+                                th_0[i_cluster] -= lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5) + 0.01*lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
                               
                         
 
