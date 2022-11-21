@@ -314,15 +314,15 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 5
 tau_2 = 5
 
-lrate_2 = 0.0003
+lrate_2 = 0.0007
 lrate_1 = 1.5*lrate_2
 lrate_0 = 1.5*lrate_1
 
 ###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.
-lrate_th_1 = 1*lrate_1
-lrate_th_0 = 1*lrate_0
+lrate_th_1 = 5*lrate_1
+lrate_th_0 = 5*lrate_0
 
 
 pause_pressed=False  
@@ -363,7 +363,9 @@ with keyboard.Listener(on_press=on_press) as listener:
 
                 
                 # Closest center with threshold computation
-                rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
+                # rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
+                rec_closest_0=np.argmin(rec_distances_0,axis=0)
+
 
                 
                 # Layer 1 check
@@ -383,7 +385,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                     rec_distances_1=np.sum((ts_lay_1[:,:,None]-weights_1[:,:,:])**2,axis=(0,1))
 
                     
-                    rec_closest_1=np.argmin(rec_distances_1-th_1,axis=0)
+                    # rec_closest_1=np.argmin(rec_distances_1-th_1,axis=0)
+                    rec_closest_1=np.argmin(rec_distances_1,axis=0)
+
                     
                     # Layer 2 check
                     if (rec_distances_1[rec_closest_1]-th_1[rec_closest_1])<0:
@@ -503,6 +507,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         if print_lay==1:
                             #Layer0
                             print("Y-som: "+str(y_som_0)+" dt Y-som: "+str(dt_y_som_0)+" Closest_center: "+str(rec_closest_0))
+                            print(rec_distances_0-th_0)
                             print(th_0)
                         elif print_lay==2:
                             #Layer1
