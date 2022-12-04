@@ -60,12 +60,6 @@ test_rec_idx = np.concatenate([np.arange(len(test_set_orig[label]),\
 
 #%% Learning
 
-
-surf_x = 11
-surf_y = 11
-suf_div_x = surf_x//2
-suf_div_y = surf_y//2
-
 n_clusters_0 = 64
 
 
@@ -73,14 +67,16 @@ n_clusters_0 = 64
 #Between words
 n_labels = 10
 
-weights_0 = np.random.rand(surf_x, surf_y, n_clusters_0)
-# weights_1 = np.random.rand(n_clusters_0, res_x, res_y, n_labels) #classifier
-weights_1 = np.zeros([n_clusters_0, res_x, res_y, n_labels]) #classifier
+
+weights_0 = np.random.rand(res_x, res_y, n_clusters_0)
+# weights_1 = np.ones([n_clusters_0, n_labels]) #classifier
+weights_1 = np.random.rand(n_clusters_0, n_labels) #classifier
 
 
 
 
-th_0 = np.zeros(n_clusters_0)+60
+
+th_0 = np.zeros(n_clusters_0)+250
 
 
 
@@ -103,24 +99,23 @@ def on_press(key):
     if key.char == ('2'):
         print_lay=2
 
-time_context_0 = np.zeros([res_x+surf_x-1, res_y+surf_x-1],dtype=int)#adding extrapixel to zeropadp
-time_context_1 = np.zeros([n_clusters_0, res_x, res_y],dtype=int)
+time_context_0 = np.zeros([res_x, res_y],dtype=int)#adding extrapixel to zeropad
+time_context_1 = np.zeros([n_clusters_0],dtype=int)
 time_context_fb_1 = np.zeros([n_labels],dtype=int)
 
 
-tau_0 = 50e3
-# tau_1 = 1e1#se non va prova questi
-tau_1 = 1e2
+tau_0 = 5e4
+tau_1 = 1e4
 
-
-lrate_1 = 5e-5
+lrate_1 = 1e-3
 lrate_0 = 1.5*lrate_1
 
 
 lrate_th_0 = 2*lrate_0
 
-exp_decay_1=0.5
+exp_decay_1=50
 
+y_som_effect = 0.0001
 
 pause_pressed=False  
 print_lay=2  
@@ -138,8 +133,8 @@ with keyboard.Listener(on_press=on_press) as listener:
     
             #event mask used to avoid exponential decay calculation for pixel 
             # that did not generate an event yet
-            mask_start_0 = np.zeros([res_x+surf_x-1, res_y+surf_x-1],dtype=int)#adding extrapixel to zeropad 
-            mask_start_1 = np.zeros([n_clusters_0, res_x, res_y],dtype=int)
+            mask_start_0 = np.zeros([res_x, res_y],dtype=int)#adding extrapixel to zeropad 
+            mask_start_1 = np.zeros([n_clusters_0],dtype=int)
             mask_start_fb_1 = np.zeros([n_labels],dtype=int)
             
             y_som_0=0
@@ -154,41 +149,29 @@ with keyboard.Listener(on_press=on_press) as listener:
                 ref_ts =  train_set_orig[label_i][rec_i][3][ev_i]
                 
                 #Create the first time surface
-                time_context_0[ref_x+suf_div_x,ref_y+suf_div_y] = ref_ts
-                mask_start_0[ref_x+suf_div_x,ref_y+suf_div_y] = 1
-                
-                beg_ts_x = ref_x#+suf_div_x-suf_div_x
-                beg_ts_y = ref_y
-                end_ts_x = ref_x+(2*suf_div_x)+1
-                end_ts_y = ref_y+(2*suf_div_y)+1
-
-                ts_time_context_0 = time_context_0[beg_ts_x:end_ts_x,\
-                                                   beg_ts_y:end_ts_y]
-                    
-                ts_mask_start_0 = mask_start_0[beg_ts_x:end_ts_x,\
-                                                   beg_ts_y:end_ts_y]
-                                
-                
-                ts_lay_0 = np.exp(((ts_time_context_0-ref_ts)/tau_0)*ts_mask_start_0)*ts_mask_start_0
+                time_context_0[ref_x,ref_y] = ref_ts
+                mask_start_0[ref_x,ref_y] = 1
+               
+                ts_lay_0 = np.exp(((time_context_0-ref_ts)/tau_0)*mask_start_0)*mask_start_0
                 
                 rec_distances_0=np.sum((ts_lay_0[:,:,None]-weights_0)**2,axis=(0,1))
 
                 
                 # Closest center with threshold computation
-                rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
-                # rec_closest_0=np.argmin(rec_distances_0,axis=0)
+                # rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
+                rec_closest_0=np.argmin(rec_distances_0,axis=0)
 
 
                 
                 # Layer 1 check
                 if (rec_distances_0[rec_closest_0]-th_0[rec_closest_0])<0:
                    
-                    time_context_1[rec_closest_0, ref_x, ref_y] = ref_ts
-                    mask_start_1[rec_closest_0, ref_x, ref_y] = 1
+                    time_context_1[rec_closest_0] = ref_ts
+                    mask_start_1[rec_closest_0] = 1
                     
                     ts_lay_1 = np.exp((time_context_1-ref_ts)*mask_start_1/tau_1)*mask_start_1                                 
                     
-                    rec_distances_1=np.sum((ts_lay_1[:,:,:,None]-weights_1)**2,axis=(0,1,2))
+                    rec_distances_1=np.sum((ts_lay_1[:,None]-weights_1)**2,axis=(0))
                   
                     rec_closest_1=np.argmin(rec_distances_1,axis=0)
                     
@@ -210,38 +193,37 @@ with keyboard.Listener(on_press=on_press) as listener:
     
                     dt_y_som_0 = y_som_0 - y_som_old_0
                     y_som_old_0 = y_som_0
-                    
-                    
+
                     ##WEIGHTS AND TH UPDATE
 
                     #Layer 1
                     #supervised
-                    elem_distances_1 = (ts_lay_1[:,:,:]-weights_1[:,:,:,label_i])
-                    weights_1[:,:,:,label_i]+=lrate_1*elem_distances_1[:]
-                    
+                    elem_distances_1 = (ts_lay_1[:]-weights_1[:,label_i])
+                    weights_1[:,label_i]+=lrate_1*elem_distances_1[:]
+
+
                     #unsupervised       
                     # elem_distances_1 = (ts_lay_1[:,:,:]-weights_1[:,:,:,rec_closest_1])
                     # weights_1[:,:,rec_closest_1]+=lrate_1*elem_distances_1[:]
     
                     #Layer 0
                     #weights
-                    elem_distances_0 = (ts_lay_0[:,:]-weights_0[:,:,rec_closest_0])
-                    # rec_closest_0_one_hot = np.zeros([n_clusters_0])
-                    # rec_closest_0_one_hot[rec_closest_0]=1
+                    elem_distances_0 = (ts_lay_0[:,:,None]-weights_0[:,:,:])
+                    rec_closest_0_one_hot = np.zeros([n_clusters_0])
+                    rec_closest_0_one_hot[rec_closest_0]=1
                     
                     # Keep only the distances for winners
-                    weights_0[:,:,rec_closest_0]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + 0.01*lrate_0*(y_som_0*elem_distances_0[:]))
-
+                    weights_0[:,:,:]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + y_som_effect*lrate_0*(y_som_0*elem_distances_0[:]))
                    
                     #threshold
                     for i_cluster in range(n_clusters_0):
                         if i_cluster==rec_closest_0:
-                            th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp((rec_distances_0[rec_closest_0]-th_0[rec_closest_0])/exp_decay_1) + 0.01*lrate_th_0*y_som_0*np.exp((rec_distances_0[rec_closest_0]-th_0[rec_closest_0])/exp_decay_1)
+                            th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp((rec_distances_0[rec_closest_0]-th_0[rec_closest_0])/exp_decay_1) + y_som_effect*lrate_th_0*y_som_0*np.exp((rec_distances_0[rec_closest_0]-th_0[rec_closest_0])/exp_decay_1)
                         elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (dt_y_som_0>0) and (y_som_0>0):
                         # elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0):
 
                         # else:
-                            th_0[i_cluster] -= lrate_th_0*dt_y_som_0*np.exp((rec_distances_0[i_cluster]-th_0[i_cluster])/exp_decay_1) + 0.01*lrate_th_0*y_som_0*np.exp((rec_distances_0[i_cluster]-th_0[i_cluster])/exp_decay_1)
+                            th_0[i_cluster] -= lrate_th_0*dt_y_som_0*np.exp((rec_distances_0[i_cluster]-th_0[i_cluster])/exp_decay_1) + y_som_effect*lrate_th_0*y_som_0*np.exp((rec_distances_0[i_cluster]-th_0[i_cluster])/exp_decay_1)
                           
                     
 
@@ -261,10 +243,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                     progress = computed_events/n_events
                     rel_accuracy = event_accuracy/computed_events
                     print("Epoch "+str(epoch)+", Recording "+str(data_rec_i)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(rel_accuracy))
-
                     
                     if print_lay==1:
-                    #Layer0
+                    # Layer0
                         print(rec_distances_0)
                         print("Prediction: "+result+str(label_i))
                         print("Y-som: "+str(y_som_0)+" dt Y-som: "+str(dt_y_som_0)+" Closest_center: "+str(rec_closest_0))
@@ -274,9 +255,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         print(rec_distances_1)
                         print("Prediction: "+result+str(label_i))
                         print("Y-som: "+str(y_som_0)+" dt Y-som: "+str(dt_y_som_0)+" Closest_center: "+str(rec_closest_1))
-                        # print(th_1)
 
-                        
+                    print("Prediction: "+result+str(label_i))
+
     
                 if pause_pressed == True:    
                     if n_clusters_0>1:
@@ -307,9 +288,9 @@ fig, axs = plt.subplots(8,8)
 axs=axs.flatten()
 for pol_i in range(n_clusters_0):
     if n_clusters_0>1:
-        axs[pol_i].imshow(np.reshape(weights_0[:,:,pol_i], [surf_x,surf_y]))
+        axs[pol_i].imshow(np.reshape(weights_0[:,:,pol_i], [res_x,res_y]))
     elif n_clusters_0==1:
-        axs.imshow(np.reshape(weights_0[:,:,pol_i], [surf_x,surf_y]))
+        axs.imshow(np.reshape(weights_0[:,:,pol_i], [res_x,res_y]))
 
 #%% Testing
 

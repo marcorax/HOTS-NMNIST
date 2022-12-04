@@ -314,7 +314,7 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 5
 tau_2 = 5
 
-lrate_2 = 0.0007
+lrate_2 = 0.0005
 lrate_1 = 1.5*lrate_2
 lrate_0 = 1.5*lrate_1
 
@@ -480,7 +480,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         for i_cluster in range(n_clusters_0):
                             if i_cluster==rec_closest_0:
                                 th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5) + 0.01*lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/0.5)
-                            elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (y_som_0>0):
+                            elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (y_som_0>0) and (dt_y_som_0>0):
                             # else:
                                 th_0[i_cluster] -= lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5) + 0.01*lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[i_cluster]-th_0[i_cluster]))/0.5)
                               
