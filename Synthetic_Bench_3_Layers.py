@@ -549,4 +549,3 @@ for pol_i in range(n_clusters_0):
         axs[pol_i].imshow(np.reshape(weights_0[:,:,pol_i], [5,5]))
     elif n_clusters_0==1:
         axs.imshow(np.reshape(weights_0[:,:,pol_i], [5,5]))
-
