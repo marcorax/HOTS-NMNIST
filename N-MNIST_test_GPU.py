@@ -69,7 +69,7 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 256
+batch_size = 1024
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
@@ -83,8 +83,8 @@ suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
 n_clusters_0 = 64
 weights_0 = np.random.rand(batch_size, surf_x_0, surf_y_0, n_clusters_0)
-time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1],dtype=np.int32)#adding extrapixel to zeropadp
-mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1],dtype=np.int32)#adding extrapixel to zeropadp
+time_context_0 = np.zeros([batch_size, res_x, res_y, n_pol_0],dtype=np.int32)#adding extrapixel to zeropadp
+mask_0 = np.zeros([batch_size, res_x, res_y, n_pol_0],dtype=np.int32)#adding extrapixel to zeropadp
 th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+60
 
 
@@ -112,7 +112,7 @@ fstr = "".join(f.readlines())
 program=cl.Program(ctx, fstr).build()
 
 rec = 0
-for epoch_i in range(n_epochs):
+for epoch_i in range(1):
     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
@@ -121,18 +121,18 @@ for epoch_i in range(n_epochs):
         
     n_max_events = max(n_events_rec)
 
-    xs_np = np.nan*np.zeros((batch_size,n_max_events),dtype=np.int32)
-    ys_np = np.nan*np.zeros((batch_size,n_max_events),dtype=np.int32)
-    ps_np = np.nan*np.zeros((batch_size,n_max_events),dtype=np.int32)
-    ts_np = np.nan*np.zeros((batch_size,n_max_events),dtype=np.int32)
-    TS_np = np.nan*np.zeros((batch_size,n_max_events,surf_x_0,surf_y_0),dtype=np.float32)    
+    xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    TS_np = -1*np.ones((batch_size,n_max_events,surf_x_0,surf_y_0),dtype=np.float32)    
     
     for i in range(batch_size):
         data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
         n_events = len(data_events[0])
         xs_np[i,:n_events] = data_events[0]
         ys_np[i,:n_events] = data_events[1]
-        ps_np[i,:n_events] = data_events[2]
+        ps_np[i,:n_events] = data_events[2]*0 #throwing away events polarities at first layer
         ts_np[i,:n_events] = data_events[3]
         
     rec+=batch_size 
@@ -147,18 +147,25 @@ for epoch_i in range(n_epochs):
     ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
     n_max_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
     TS_bf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np)
+    event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+
 
     for ev_i in range(n_max_events):
-       event_idx_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(ev_i))
-       kernel=program.surf_conv(queue, global_space, local_space, xs_bf, ys_bf, ps_bf,
-                            ts_bf, res_x_bf, res_y_bf, surf_x_0_bf, surf_y_0_bf,
-                            tau_0_bf, n_pol_0_bf, TS_bf, event_idx_bf,
-                            n_max_events_bf, time_context_0_bf, mask_0_bf)
+        kernel=program.surf_conv(queue, global_space, local_space, xs_bf, ys_bf, ps_bf,
+                             ts_bf, res_x_bf, res_y_bf, surf_x_0_bf, surf_y_0_bf,
+                             tau_0_bf, n_pol_0_bf, TS_bf, event_idx_bf,
+                             n_max_events_bf, time_context_0_bf, mask_0_bf)
+        print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
+
 
        
     print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
        
 
+cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+# ev_out = np.int32(0)
+cl.enqueue_copy(queue, mask_0, mask_0_bf).wait()
+cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
 
 
 #%% Learning
