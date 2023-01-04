@@ -58,6 +58,7 @@ test_labels = np.concatenate([label*np.ones(len(test_set_orig[label]),\
 test_rec_idx = np.concatenate([np.arange(len(test_set_orig[label]),\
                            dtype=int) for label in range(num_labels)])
 
+    
 #%% GPU Initialization
 mf = cl.mem_flags
 platforms = cl.get_platforms()
@@ -69,7 +70,7 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 1024
+batch_size = 512
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
@@ -81,35 +82,83 @@ n_pol_0 = 1
 tau_0 = 50e3
 suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
-n_clusters_0 = 64
-weights_0 = np.random.rand(batch_size, surf_x_0, surf_y_0, n_clusters_0)
-time_context_0 = np.zeros([batch_size, res_x, res_y, n_pol_0],dtype=np.int32)#adding extrapixel to zeropadp
-mask_0 = np.zeros([batch_size, res_x, res_y, n_pol_0],dtype=np.int32)#adding extrapixel to zeropadp
+n_clusters_0 = 1
+weights_0 = np.array(np.random.rand(batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0), dtype=np.float32)
+time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
+mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+60
+closest_0 = np.zeros([batch_size],dtype=np.int32)
+
+
+#The GPU is using a flattened index to pefrorm operation on time surfaces
+#Since I need this index to encode the relative pixel positions compared to 
+#events x_i,y_i,p_i I need to build a lookup table and send it to conv layers
+lkt_0 = np.zeros(surf_x_0*surf_y_0*n_pol_0, dtype=np.int32)
+count_tmp = 0
+for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
+    for rel_y in np.arange(-surf_y_0//2,surf_y_0//2)+1:
+        for rel_p in range(n_pol_0):
+            lkt_0[count_tmp] = rel_x*(res_y+surf_y_0-1)*n_pol_0 + (rel_y)*n_pol_0 + rel_p
+            count_tmp+=1;
 
 
 #Dense Layer 2 data and parameters Classifier
-weights_1 = np.zeros([batch_size, n_clusters_0, res_x, res_y, n_labels]) #classifier
-time_context_1 = np.zeros([batch_size, n_clusters_0, res_x, res_y],dtype=np.int32)
-time_context_fb_1 = np.zeros([batch_size, n_labels], dtype=np.int32)#TODO Check if it is still zero
+tau_1 = 50e3
+n_clusters_1=10
+
+weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0]) #classifier
+time_context_1 = np.zeros([batch_size, res_x, res_y, n_clusters_0],dtype=np.int32)
+mask_1 = np.zeros([batch_size, res_x, res_y, n_pol_0, n_clusters_0],dtype=np.int32)
+time_context_fb_1 = np.zeros([batch_size, n_labels], dtype=np.int32)
+closest_1 = np.zeros([batch_size],dtype=np.int32)
 
 #Data Buffers allocation
+
+#Layer 1 Conv
+#TODO find a way to get the optimal loc_size automatically via opencl
+loc_size = 64;
+#Building the kernel
+# global_space_0=np.array([batch_size,surf_x_0*surf_y_0*n_pol_0])
+# local_space_0=np.array([1,surf_x_0*surf_y_0*n_pol_0])
+
+global_space_0=np.array([batch_size,loc_size])
+local_space_0=np.array([1,loc_size])
+
 weights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
-weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
 surf_x_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(surf_x_0))
 surf_y_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(surf_y_0))
 res_x_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_x))
 res_y_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_y))
 tau_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_0))
 n_pol_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_pol_0))
+n_clusters_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_0))
+closest_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_0)
+lkt_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=lkt_0)
+p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(loc_size, dtype=np.float32))
+#TODO Devo fare due bool per saltare "eventi" uno per la threshold distance, 
+#singolo a cui accedono tutti i layers, True*True ecc ecc., il classificatore lo risetta a True.
+# il secondo copia l'ultimo stato dell'altro e viene usato per guidare il feedback.
+# metto un big if nel kernel fb di  ogni layer che controlla questa variabile 
 
-#Building the kernel
-global_space=np.array([batch_size,surf_x_0,surf_y_0])
-local_space=np.array([1,surf_x_0,surf_y_0])
-f = open('surf_conv.cl', 'r')
-fstr = "".join(f.readlines())
+#Layer 2 Class
+loc_size = 64;
+
+global_space_1=np.array([batch_size, loc_size])#Max local size
+local_space_1=np.array([1, loc_size])
+
+weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
+tau_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_1))
+n_clusters_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_1))
+closest_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_1)
+p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(loc_size, dtype=np.float32))
+
+
+f = open('Libs/cl_kernels/conv_infer.cl', 'r')
+fstr1 = "".join(f.readlines())
+f = open('Libs/cl_kernels/class_infer.cl', 'r')
+fstr2 = "".join(f.readlines())
 # print(fstr)
-program=cl.Program(ctx, fstr).build()
+program=cl.Program(ctx, fstr1+fstr2).build(options='-cl-std=CL2.0')
 
 rec = 0
 for epoch_i in range(1):
@@ -125,14 +174,25 @@ for epoch_i in range(1):
     ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
     ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
     ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
-    TS_np = -1*np.ones((batch_size,n_max_events,surf_x_0,surf_y_0),dtype=np.float32)    
+    # TS_np = -1*np.ones((batch_size,n_max_events,surf_x_0,surf_y_0, n_pol_0),dtype=np.float32)
+    # TS_np_1 = -1*np.ones((batch_size,n_max_events,res_x,res_y, n_clusters_0),dtype=np.float32)    
+    TS_np = -1*np.ones((batch_size,surf_x_0,surf_y_0, n_pol_0),dtype=np.float32)
+    TS_np_1 = -1*np.ones((batch_size,res_x,res_y, n_clusters_0),dtype=np.float32)
+    dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
+    dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
+
+    distances_0 = np.zeros([batch_size,n_max_events,n_clusters_0],dtype=np.float32)
+    
+    distances_1 = np.zeros([batch_size,n_max_events,n_clusters_1],dtype=np.float32)
+
+
     
     for i in range(batch_size):
         data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
         n_events = len(data_events[0])
         xs_np[i,:n_events] = data_events[0]
         ys_np[i,:n_events] = data_events[1]
-        ps_np[i,:n_events] = data_events[2]*0 #throwing away events polarities at first layer
+        ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
         ts_np[i,:n_events] = data_events[3]
         
     rec+=batch_size 
@@ -141,20 +201,38 @@ for epoch_i in range(1):
     time_context_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_0)
     mask_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_0)
 
+    time_context_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_1)
+    mask_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_1)
+
     xs_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xs_np)
     ys_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ys_np)
     ps_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ps_np)
     ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
     n_max_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
     TS_bf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np)
+    TS_bf_1 = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np_1)
+
     event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+    distances_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_0)
+    distances_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_1)
 
 
     for ev_i in range(n_max_events):
-        kernel=program.surf_conv(queue, global_space, local_space, xs_bf, ys_bf, ps_bf,
+        kernel=program.conv_infer(queue, global_space_0, local_space_0, lkt_0_bf, xs_bf, ys_bf, ps_bf,
                              ts_bf, res_x_bf, res_y_bf, surf_x_0_bf, surf_y_0_bf,
-                             tau_0_bf, n_pol_0_bf, TS_bf, event_idx_bf,
-                             n_max_events_bf, time_context_0_bf, mask_0_bf)
+                             tau_0_bf, n_pol_0_bf, n_clusters_0_bf, event_idx_bf,
+                             n_max_events_bf, time_context_0_bf, mask_0_bf,
+                             weights_0_bf, p_sum_0_bf, distances_0_bf,
+                             closest_0_bf, TS_bf, dweights_0_bf)
+        
+        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf,
+                              ts_bf, res_x_bf, res_y_bf, tau_1_bf, n_clusters_0_bf,
+                              n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
+                              time_context_1_bf, mask_1_bf, weights_1_bf, 
+                              p_sum_1_bf, distances_1_bf, closest_1_bf,
+                              closest_0_bf, TS_bf_1, dweights_1_bf)
+
+
         print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
 
 
@@ -162,10 +240,19 @@ for epoch_i in range(1):
     print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
        
 
-cl.enqueue_copy(queue, TS_np, TS_bf).wait()
-# ev_out = np.int32(0)
-cl.enqueue_copy(queue, mask_0, mask_0_bf).wait()
-cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
+# cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
+# time_context_0 =time_context_0[:,:,:,0]
+# cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+# cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
+# cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
+
+# distances_tmp =  np.sum(np.abs(TS_np[0,:,None,:,:,0]-weights_0[0,None,:,:,:,0]),axis=(2,3))
+# np.sum(distances_tmp-distances_0[0])
+
+# cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
+
+# distances_tmp =  np.sum(np.abs(TS_np_1[0,:,None,:,:,:]-weights_1[0,None,:,:,:,:]),axis=(2,3,4))
+# np.sum(distances_tmp-distances_1[0])
 
 
 #%% Learning
