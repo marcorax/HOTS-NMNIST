@@ -3,20 +3,22 @@
 #define idx4d(a,al,b,bl,c,cl,d,dl) a*bl*cl*dl + b*cl*dl + c*dl + d
 #define idx3d(a,al,b,bl,c,cl) a*bl*cl + b*cl + c 
 #define idx2d(a,al,b,bl) a*bl + b
-//TODO IMPLEMENT TS_DROP Boolean for when rec_distances_i[rec_closest_i]-th_i[rec_closest_0])<0
-__kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
+
+__kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
                           __global int *res_x_b, __global int *res_y_b,
                           __global int *tau_b, __global int *n_pol_b,
                           __global int *n_clusters_b, __global int *ev_i_b,
-                          __global int *n_events_b, __global int *tcontext_fb,
-                          __global int *ts_mask_fb, __global float *weights,
-                          __local float *partial_sum, __global float *S,
-                          __global int *closest, __global float *TS)
+                          __global int *n_events_b, __global int *tcontext,
+                          __global int *ts_mask, __global float *weights,
+                          __local float *partial_sum, __global float *distances,
+                          __global int *closest, __global int *prev_closest,
+                          __global float *TS, __global float *dweights, 
+                          __global int *fevskip, __global int *bevskip, 
+                          __global int *processed_ev, __global int *correct_ev, 
+                          __global int *batch_labels)
 {
     unsigned int i_file = get_global_id(0);
-    unsigned int n_iter_fb;
     unsigned int n_iter;
-
     
     int n_clusters=*n_clusters_b;   
     int res_x=*res_x_b;
@@ -24,7 +26,8 @@ __kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
     int n_pol=*n_pol_b;
     int tau=*tau_b;
     int ev_i=*ev_i_b;
-    int n_events=*n_events_b;        
+    int n_events=*n_events_b;    
+  
 
     float ts_value; // default allocation is private, faster than local
     float tmp_ts_value;  
@@ -56,7 +59,7 @@ __kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
     ps_i = *prev_closest;
     ts_i = ts[lin_idx];   
         
-    if (ts_i!=-1){//Zeropad events here are actually -1 padded
+    if (ts_i!=-1 && fevskip[i_file]==0){//Zeropad events here are actually -1 padded
         lin_idx = idx4d(i_file, (int) get_global_size(0), xs_i, res_x, ys_i, res_y,
                         ps_i, n_pol);
                         
@@ -78,14 +81,27 @@ __kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
                     }                 
                 }  
             }
-        lin_idx = idx5d(i_file, (int) get_global_size(0), 
-                        ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
+            
+        //Debug Index (save each event)
+//         lin_idx = idx5d(i_file, (int) get_global_size(0), 
+//                         ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
+//                         + (int) get_local_id(1) 
+//                         + i* (int) get_local_size(1);
+
+        lin_idx = idx4d(i_file, (int) get_global_size(0), 
+                        0, res_x, 0, res_y, 0, n_pol)
                         + (int) get_local_id(1) 
                         + i* (int) get_local_size(1);
     
-        TS[lin_idx] = ts_value; //Leftover for debug 
+        TS[lin_idx] = ts_value; 
         ts_value=0;//reset ts_value
 
+        }
+        
+        if (get_local_id(1)==0){
+        
+            processed_ev[i_file] += 1;       
+        
         }    
     }
         
@@ -94,13 +110,18 @@ __kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
         for (int i=0; i<n_iter; i++){   
             tsidx = (int)get_local_id(1)+i*(int) get_local_size(1);
             if (tsidx<tssize){  
-            
-                lin_idx = idx5d(i_file, (int) get_global_size(0), 
-                                ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
+                //Debug Index (save each event)
+//                 lin_idx = idx5d(i_file, (int) get_global_size(0), 
+//                                 ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
+//                                 + (int) get_local_id(1) 
+//                                 + i* (int) get_local_size(1);
+                                
+                lin_idx = idx4d(i_file, (int) get_global_size(0), 
+                                0, res_x, 0, res_y, 0, n_pol)
                                 + (int) get_local_id(1) 
                                 + i* (int) get_local_size(1);
-            
-                ts_value=TS[lin_idx]; //Leftover for debug  
+                        
+                ts_value=TS[lin_idx]; 
             
             
                 lin_idx = idx5d(i_file, (int) get_global_size(0), cl, 
@@ -110,6 +131,8 @@ __kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
             
                 //Euclidean is causing a good chunk of approx errors, moving to L1 
                 elem_distance = fabs(weights[lin_idx]-ts_value);
+                //save the weight change for the fb. to save computation
+                dweights[lin_idx] = elem_distance;
                 partial_sum[(int) get_local_id(1)]+=elem_distance;
             }
         } 
@@ -139,7 +162,16 @@ __kernel void class_back(__global int *xs,__global int *ys, __global int *ts,
         }
                 
     }
-
+    
+    if (get_local_id(1)==0){
+    
+        bevskip[i_file] = fevskip[i_file];     
+        if (closest[i_file]==batch_labels[i_file]){
+            correct_ev[i_file] += 1;
+        }  
+    
+    }
+    
     if(i_file==0 && get_local_id(1)==0){
         *ev_i_b=ev_i+1;
     }    

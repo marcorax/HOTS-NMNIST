@@ -15,6 +15,7 @@ from sklearn.cluster import KMeans
 from scipy.special import expit
 from pynput import keyboard
 import pyopencl as cl
+import time
 
 from Libs.HOTSLib import fb_surfaces, all_surfaces, n_mnist_rearranging,\
                             dataset_resize
@@ -70,7 +71,7 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 512
+batch_size = 256
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
@@ -82,12 +83,13 @@ n_pol_0 = 1
 tau_0 = 50e3
 suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
-n_clusters_0 = 1
+n_clusters_0 = 64
 weights_0 = np.array(np.random.rand(batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0), dtype=np.float32)
 time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
-th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+60
+th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+600
 closest_0 = np.zeros([batch_size],dtype=np.int32)
+
 
 
 #The GPU is using a flattened index to pefrorm operation on time surfaces
@@ -116,7 +118,9 @@ closest_1 = np.zeros([batch_size],dtype=np.int32)
 
 #Layer 1 Conv
 #TODO find a way to get the optimal loc_size automatically via opencl
-loc_size = 64;
+# loc_size = 64;
+loc_size = surf_x_0*surf_y_0*n_pol_0;
+
 #Building the kernel
 # global_space_0=np.array([batch_size,surf_x_0*surf_y_0*n_pol_0])
 # local_space_0=np.array([1,surf_x_0*surf_y_0*n_pol_0])
@@ -135,13 +139,10 @@ n_clusters_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int
 closest_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_0)
 lkt_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=lkt_0)
 p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(loc_size, dtype=np.float32))
-#TODO Devo fare due bool per saltare "eventi" uno per la threshold distance, 
-#singolo a cui accedono tutti i layers, True*True ecc ecc., il classificatore lo risetta a True.
-# il secondo copia l'ultimo stato dell'altro e viene usato per guidare il feedback.
-# metto un big if nel kernel fb di  ogni layer che controlla questa variabile 
+th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_0) 
 
 #Layer 2 Class
-loc_size = 64;
+loc_size = 256;
 
 global_space_1=np.array([batch_size, loc_size])#Max local size
 local_space_1=np.array([1, loc_size])
@@ -153,12 +154,20 @@ closest_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_
 p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(loc_size, dtype=np.float32))
 
 
+# fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
+fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(batch_size, dtype=np.int32))
+bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(batch_size, dtype=np.int32))
+
+
+
 f = open('Libs/cl_kernels/conv_infer.cl', 'r')
 fstr1 = "".join(f.readlines())
 f = open('Libs/cl_kernels/class_infer.cl', 'r')
 fstr2 = "".join(f.readlines())
+f = open('Libs/cl_kernels/next_ev.cl', 'r')
+fstr3 = "".join(f.readlines())
 # print(fstr)
-program=cl.Program(ctx, fstr1+fstr2).build(options='-cl-std=CL2.0')
+program=cl.Program(ctx, fstr1+fstr2+fstr3).build(options='-cl-std=CL2.0')
 
 rec = 0
 for epoch_i in range(1):
@@ -181,9 +190,12 @@ for epoch_i in range(1):
     dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
     dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
 
-    distances_0 = np.zeros([batch_size,n_max_events,n_clusters_0],dtype=np.float32)
-    
+    distances_0 = np.zeros([batch_size,n_max_events,n_clusters_0],dtype=np.float32)    
     distances_1 = np.zeros([batch_size,n_max_events,n_clusters_1],dtype=np.float32)
+    processed_ev = np.zeros([batch_size],dtype=np.int32)
+    correct_ev = np.zeros([batch_size],dtype=np.int32)
+    train_batch_labels = np.zeros([batch_size],dtype=np.int32)
+    n_events_batch = np.zeros([batch_size],dtype=np.int32)
 
 
     
@@ -194,6 +206,8 @@ for epoch_i in range(1):
         ys_np[i,:n_events] = data_events[1]
         ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
         ts_np[i,:n_events] = data_events[3]
+        train_batch_labels[i] = train_labels[rec+i]
+        n_events_batch[i] = n_events
         
     rec+=batch_size 
     batch_size=len(train_labels[rec:rec+batch_size])
@@ -215,29 +229,51 @@ for epoch_i in range(1):
     event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
     distances_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_0)
     distances_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_1)
+    
+    processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
+    correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+    train_batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=train_batch_labels)
 
-
+    start_exec = time.time()
     for ev_i in range(n_max_events):
+        
+        # event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(ev_i))
+
         kernel=program.conv_infer(queue, global_space_0, local_space_0, lkt_0_bf, xs_bf, ys_bf, ps_bf,
                              ts_bf, res_x_bf, res_y_bf, surf_x_0_bf, surf_y_0_bf,
                              tau_0_bf, n_pol_0_bf, n_clusters_0_bf, event_idx_bf,
                              n_max_events_bf, time_context_0_bf, mask_0_bf,
-                             weights_0_bf, p_sum_0_bf, distances_0_bf,
-                             closest_0_bf, TS_bf, dweights_0_bf)
+                             weights_0_bf, th_0_bf, p_sum_0_bf, distances_0_bf,
+                             closest_0_bf, TS_bf, dweights_0_bf, fevskip_bf)
         
         kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf,
                               ts_bf, res_x_bf, res_y_bf, tau_1_bf, n_clusters_0_bf,
                               n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
                               time_context_1_bf, mask_1_bf, weights_1_bf, 
                               p_sum_1_bf, distances_1_bf, closest_1_bf,
-                              closest_0_bf, TS_bf_1, dweights_1_bf)
-
+                              closest_0_bf, TS_bf_1, dweights_1_bf, fevskip_bf,
+                              bevskip_bf, processed_ev_bf, correct_ev_bf, 
+                              train_batch_labels_bf)
+        
+        kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
+        
 
         print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
+        
+        
 
+    cl.enqueue_copy(queue, processed_ev, processed_ev_bf).wait()
+    cl.enqueue_copy(queue, correct_ev, correct_ev_bf).wait()
+    
+    avg_processed_ev = np.mean(processed_ev / n_events_batch)
+    avg_accuracy = np.mean(correct_ev / processed_ev)
+    #TODO fix 1.0000205841402843 processed events problem 
 
-       
+    end_exec = time.time()
+
     print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
+    print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
+    print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
        
 
 # cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()

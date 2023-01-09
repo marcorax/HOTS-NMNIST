@@ -3,7 +3,7 @@
 #define idx4d(a,al,b,bl,c,cl,d,dl) a*bl*cl*dl + b*cl*dl + c*dl + d
 #define idx3d(a,al,b,bl,c,cl) a*bl*cl + b*cl + c 
 #define idx2d(a,al,b,bl) a*bl + b
-//TODO IMPLEMENT TS_DROP Boolean for when rec_distances_i[rec_closest_i]-th_i[rec_closest_0])<0
+
 __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                          __global int *ps, __global int *ts, __global int *res_x_b, 
                          __global int *res_y_b, __global int *surf_x_b, 
@@ -11,9 +11,10 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                          __global int *n_pol_b, __global int *n_clusters_b, 
                          __global int *ev_i_b, __global int *n_events_b, 
                          __global int *tcontext, __global int *ts_mask,
-                         __global float *weights, __local float *partial_sum,
-                         __global float *distances, __global int *closest,
-                         __global float *TS, __global float *dweights)
+                         __global float *weights, __global float *th_0,
+                         __local float *partial_sum, __global float *distances,
+                         __global int *closest, __global float *TS,
+                         __global float *dweights, __global int *fevskip)
 {
     unsigned int i_file = get_global_id(0);
     unsigned int ts_rel_index;
@@ -27,6 +28,7 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
     int tau=*tau_b;
     int ev_i=*ev_i_b;
     int n_events=*n_events_b;        
+
 
     float ts_value; // default allocation is private, faster than local
     float tmp_ts_value;  
@@ -64,7 +66,9 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
     ts_i = ts[lin_idx];   
     
     
-    if (ts_i!=-1){//Zeropad events here are actually -1 padded
+    if (xs_i!=-1){//Zeropad events here are actually -1 padded
+//     if (xs_i!=-1 && fevskip[i_file]==0){//Zeropad events here are actually -1 padded
+
         lin_idx = idx4d(i_file, (int) get_global_size(0), xs_i, res_x, ys_i, res_y,
                         ps_i, n_pol);
         tcontext[lin_idx] = ts_i;
@@ -159,6 +163,16 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
             }
         }
                 
+    }
+    
+    if (get_local_id(1)==0){
+    
+        lin_idx = idx2d(i_file, (int) get_global_size(0), closest[i_file], 
+                        n_clusters);
+        if (min_distance>th_0[lin_idx]){
+            fevskip[i_file] = 1;
+        }
+    
     }
   
     
