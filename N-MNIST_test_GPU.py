@@ -71,7 +71,7 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 256
+batch_size = 32
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
@@ -138,7 +138,7 @@ n_pol_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_
 n_clusters_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_0))
 closest_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_0)
 lkt_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=lkt_0)
-p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(loc_size, dtype=np.float32))
+p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_0, dtype=np.float32))
 th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_0) 
 
 #Layer 2 Class
@@ -151,7 +151,7 @@ weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_
 tau_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_1))
 n_clusters_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_1))
 closest_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_1)
-p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(loc_size, dtype=np.float32))
+p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_1, dtype=np.float32))
 
 
 # fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
@@ -190,8 +190,8 @@ for epoch_i in range(1):
     dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
     dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
 
-    distances_0 = np.zeros([batch_size,n_max_events,n_clusters_0],dtype=np.float32)    
-    distances_1 = np.zeros([batch_size,n_max_events,n_clusters_1],dtype=np.float32)
+    distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float32)    
+    distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float32)
     processed_ev = np.zeros([batch_size],dtype=np.int32)
     correct_ev = np.zeros([batch_size],dtype=np.int32)
     train_batch_labels = np.zeros([batch_size],dtype=np.int32)

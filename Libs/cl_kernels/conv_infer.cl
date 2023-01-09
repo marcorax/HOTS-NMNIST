@@ -12,7 +12,7 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                          __global int *ev_i_b, __global int *n_events_b, 
                          __global int *tcontext, __global int *ts_mask,
                          __global float *weights, __global float *th_0,
-                         __local float *partial_sum, __global float *distances,
+                         __global float *partial_sum, __global float *distances,
                          __global int *closest, __global float *TS,
                          __global float *dweights, __global int *fevskip)
 {
@@ -40,7 +40,7 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
     float elem_distance; 
     float min_distance;
     int tssize = surf_x*surf_y*n_pol;
-    int tsidx;
+    int loc_idx;
     
     
     //Zeropad indices and res variables
@@ -76,9 +76,9 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
             ts_mask[lin_idx]=1;}
             
         for (int i=0; i<n_iter; i++){   
-            tsidx = (int)get_local_id(1)+i*(int) get_local_size(1);
-            if (tsidx<tssize){    
-                ts_rel_index = lkt[tsidx];
+            loc_idx = (int)get_local_id(1)+i*(int) get_local_size(1);
+            if (loc_idx<tssize){    
+                ts_rel_index = lkt[loc_idx];
                 lin_idx = idx4d(i_file, (int) get_global_size(0), xs_i, res_x, 
                                 ys_i, res_y, 0, n_pol) + ts_rel_index;
                             
@@ -109,8 +109,8 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
 
     for (int cl=0; cl<n_clusters; cl++){
         for (int i=0; i<n_iter; i++){   
-            tsidx = (int)get_local_id(1)+i*(int) get_local_size(1);
-            if (tsidx<tssize){  
+            loc_idx = (int)get_local_id(1)+i*(int) get_local_size(1);
+            if (loc_idx<tssize){  
                 //Debug Index (save each event)
 //                 lin_idx = idx5d(i_file, (int) get_global_size(0), 
 //                                 ev_i, n_events, 0, surf_x, 0, surf_y, 0, n_pol)
@@ -134,17 +134,20 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                 elem_distance = fabs(weights[lin_idx]-ts_value);
                 //save the weight change for the fb. to save computation
                 dweights[lin_idx] = elem_distance;
-                partial_sum[(int) get_local_id(1)]+=elem_distance;
+                loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
+                               (int) get_local_size(1)); 
+                partial_sum[loc_idx]+=elem_distance;
             }
         } 
         
                 
         //REDUCTION ALGORITHM HERE    
-        lin_idx = idx3d(i_file, (int) get_global_size(0), ev_i, n_events, cl,
-                          n_clusters);                                            
-                          
-        distances[lin_idx] = work_group_reduce_add(partial_sum[(int) get_local_id(1)]);
-        partial_sum[(int) get_local_id(1)]=0; //reset for the next cluster
+        lin_idx = idx2d(i_file, (int) get_global_size(0), cl, n_clusters);                                            
+        loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
+                       (int) get_local_size(1));                                            
+
+        distances[lin_idx] = work_group_reduce_add(partial_sum[loc_idx]);
+        partial_sum[loc_idx]=0; //reset for the next cluster
 
         if (get_local_id(1)==0){
         
