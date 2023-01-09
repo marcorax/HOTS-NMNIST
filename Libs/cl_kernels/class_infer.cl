@@ -59,8 +59,7 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
     ps_i = *prev_closest;
     ts_i = ts[lin_idx];   
         
-//     if (xs_i!=-1 && fevskip[i_file]==0){//Zeropad events here are actually -1 padded
-    if (xs_i!=-1){//Zeropad events here are actually -1 padded
+    if (xs_i!=-1 && fevskip[i_file]==0){//Zeropad events here are actually -1 padded
 
         lin_idx = idx4d(i_file, (int) get_global_size(0), xs_i, res_x, ys_i, res_y,
                         ps_i, n_pol);
