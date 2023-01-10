@@ -46,7 +46,7 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
     // Time Surface serial calculation
     // If the local worker size is less than the number of elements in a Time-
     // Surface, then cycle multiple iterations up until all elements are computed
-    n_iter = (int) ceil(((float) tssize)/((float) get_local_size(1)));
+    n_iter = (int) ceil(((float) tssize) / ((float) get_local_size(1)));
     
 
     ts_value=0;
@@ -81,22 +81,23 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
                         ts_value=tmp_ts_value;                                                                 
                     }                 
                 }  
-            }
             
-        //Debug Index (save each event)
-//         lin_idx = idx5d(i_file, (int) get_global_size(0), 
-//                         ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
-//                         + (int) get_local_id(1) 
-//                         + i* (int) get_local_size(1);
-
-        lin_idx = idx4d(i_file, (int) get_global_size(0), 
-                        0, res_x, 0, res_y, 0, n_pol)
-                        + (int) get_local_id(1) 
-                        + i* (int) get_local_size(1);
+            
+                //Debug Index (save each event)
+        //         lin_idx = idx5d(i_file, (int) get_global_size(0), 
+        //                         ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
+        //                         + (int) get_local_id(1) 
+        //                         + i* (int) get_local_size(1);
+        
+                lin_idx = idx4d(i_file, (int) get_global_size(0), 
+                                0, res_x, 0, res_y, 0, n_pol)
+                                + (int) get_local_id(1) 
+                                + i* (int) get_local_size(1);
+            
+                TS[lin_idx] = ts_value; 
+                ts_value=0;//reset ts_value
     
-        TS[lin_idx] = ts_value; 
-        ts_value=0;//reset ts_value
-
+            }
         }
         
         if (get_local_id(1)==0){
@@ -104,66 +105,65 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
             processed_ev[i_file] += 1;       
         
         }    
-    }
+    
         
-
-    for (int cl=0; cl<n_clusters; cl++){
-        for (int i=0; i<n_iter; i++){   
-            loc_idx = (int)get_local_id(1)+i*(int) get_local_size(1);
-            if (loc_idx<tssize){  
-                //Debug Index (save each event)
-//                 lin_idx = idx5d(i_file, (int) get_global_size(0), 
-//                                 ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
-//                                 + (int) get_local_id(1) 
-//                                 + i* (int) get_local_size(1);
-                                
-                lin_idx = idx4d(i_file, (int) get_global_size(0), 
-                                0, res_x, 0, res_y, 0, n_pol)
-                                + (int) get_local_id(1) 
-                                + i* (int) get_local_size(1);
-                        
-                ts_value=TS[lin_idx]; 
-            
-            
-                lin_idx = idx5d(i_file, (int) get_global_size(0), cl, 
-                                n_clusters, 0, res_x, 0, res_y, 0, n_pol)
-                                + (int) get_local_id(1) 
-                                + i* (int) get_local_size(1);
-            
-                //Euclidean is causing a good chunk of approx errors, moving to L1 
-                elem_distance = fabs(weights[lin_idx]-ts_value);
-                //save the weight change for the fb. to save computation
-                dweights[lin_idx] = elem_distance;
-                loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
-                               (int) get_local_size(1)); 
-                partial_sum[loc_idx]+=elem_distance;
-            }
-        } 
-        
+        for (int cl=0; cl<n_clusters; cl++){
+            for (int i=0; i<n_iter; i++){   
+                loc_idx = (int)get_local_id(1)+i*(int) get_local_size(1);
+                if (loc_idx<tssize){  
+                    //Debug Index (save each event)
+    //                 lin_idx = idx5d(i_file, (int) get_global_size(0), 
+    //                                 ev_i, n_events, 0, res_x, 0, res_y, 0, n_pol)
+    //                                 + (int) get_local_id(1) 
+    //                                 + i* (int) get_local_size(1);
+                                    
+                    lin_idx = idx4d(i_file, (int) get_global_size(0), 
+                                    0, res_x, 0, res_y, 0, n_pol) +
+                                    loc_idx;
+                            
+                    ts_value=TS[lin_idx]; 
                 
-        //REDUCTION ALGORITHM HERE    
-        lin_idx = idx2d(i_file, (int) get_global_size(0), cl, n_clusters);                                            
-        loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
-                       (int) get_local_size(1)); 
-        distances[lin_idx] = work_group_reduce_add(partial_sum[loc_idx]);
-        partial_sum[loc_idx]=0; //reset for the next cluster
-
-        if (get_local_id(1)==0){
-        
-            if(cl!=0){
+                
+                    lin_idx = idx5d(i_file, (int) get_global_size(0), cl, 
+                                    n_clusters, 0, res_x, 0, res_y, 0, n_pol) +
+                                    loc_idx;
+                
+                    //Euclidean is causing a good chunk of approx errors, moving to L1 
+                    elem_distance = fabs(weights[lin_idx]-ts_value);
+                    //save the weight change for the fb. to save computation
+                    dweights[lin_idx] = elem_distance;
+                    loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
+                                   (int) get_local_size(1)); 
+                    partial_sum[loc_idx]+=elem_distance;
+                }
+            } 
             
-                if (distances[lin_idx]<min_distance){
+                    
+            //REDUCTION ALGORITHM HERE    
+            lin_idx = idx2d(i_file, (int) get_global_size(0), cl, n_clusters);                                            
+            loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
+                           (int) get_local_size(1)); 
+            distances[lin_idx] = work_group_reduce_add(partial_sum[loc_idx]);
+            partial_sum[loc_idx]=0; //reset for the next cluster
+    
+            if (get_local_id(1)==0){
+            
+                if(cl!=0){
+                
+                    if (distances[lin_idx]<min_distance){
+                        closest[i_file]=cl;
+                        min_distance=distances[lin_idx];
+                    }
+    
+                }
+                else{
                     closest[i_file]=cl;
                     min_distance=distances[lin_idx];
                 }
-
             }
-            else{
-                closest[i_file]=cl;
-                min_distance=distances[lin_idx];
-            }
+                    
         }
-                
+    
     }
     
     if (get_local_id(1)==0){
