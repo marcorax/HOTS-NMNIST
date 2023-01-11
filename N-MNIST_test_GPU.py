@@ -30,8 +30,6 @@ n_recording_labels_train=[len(train_set_orig[label]) for label in range(len(trai
 n_recording_labels_test=[len(test_set_orig[label]) for label in range(len(train_set_orig))]
 
 # using a subset of N-MNIST to lower memory usage
-files_dataset_train = min(n_recording_labels_train)//10 #10
-files_dataset_test = min(n_recording_labels_test)//10 #10 
 num_labels = len(test_set_orig)
 
 # N-MNIST resolution 
