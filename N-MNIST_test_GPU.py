@@ -88,7 +88,7 @@ suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
 n_clusters_0 = 64
 # n_clusters_0 = 1
-lrate_0 = 5e-5
+lrate_0 = 5e-6
 lrate_th_0 = 2*lrate_0
 th_decay_0=0.5
 
@@ -122,7 +122,7 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
 #Dense Layer 2 data and parameters Classifier
 tau_1 = 50e3
 n_clusters_1=10
-lrate_1 = 1e-5
+lrate_1 = 1e-6
 
 
 weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
@@ -202,7 +202,7 @@ program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options
 
 #%%TRAIN SET
 rec = 0
-for epoch_i in range(12): 
+for epoch_i in range(5): 
     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
@@ -352,7 +352,7 @@ for epoch_i in range(12):
 for i in range(n_clusters_0):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(weights_0[0,1,:,:,0])
+    plt.imshow(weights_0[0,i,:,:,0])
 
 # cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
 # time_context_0 =time_context_0[:,:,:,0]

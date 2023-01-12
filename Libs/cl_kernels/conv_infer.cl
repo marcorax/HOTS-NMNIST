@@ -133,7 +133,7 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                     //Euclidean is causing a good chunk of approx errors, moving to L1 
                     elem_distance = fabs(weights[lin_idx]-ts_value);
                     //save the weight change for the fb. to save computation
-                    dweights[lin_idx] = elem_distance;
+                    dweights[lin_idx] = ts_value-weights[lin_idx];
                     loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
                                    (int) get_local_size(1)); 
                     partial_sum[loc_idx]+=elem_distance;

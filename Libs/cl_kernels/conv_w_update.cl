@@ -49,8 +49,7 @@ __kernel void conv_w_update(__global int *ts, __global int *surf_x_b,
                                 n_clusters, 0, surf_x, 0, surf_y, 0, n_pol)
                                 + loc_idx;
                             
-                weights[lin_idx] = weights[lin_idx] +
-                                   0.01*S[i_file]*lrate*dweights[lin_idx] + 
+                weights[lin_idx] = 0.01*S[i_file]*lrate*dweights[lin_idx] + 
                                    dS[i_file]*lrate*dweights[lin_idx];
                 
                 }  
