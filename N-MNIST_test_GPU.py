@@ -88,7 +88,7 @@ suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
 n_clusters_0 = 64
 # n_clusters_0 = 1
-lrate_0 = 1e-7
+lrate_0 = 5e-5
 lrate_th_0 = 2*lrate_0
 th_decay_0=0.5
 
@@ -122,7 +122,7 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
 #Dense Layer 2 data and parameters Classifier
 tau_1 = 50e3
 n_clusters_1=10
-lrate_1 = 1e-8
+lrate_1 = 1e-5
 
 
 weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
@@ -347,13 +347,20 @@ for epoch_i in range(12):
     print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
     print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
     print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
-       
+
+#TODO all clusters end up being the same, there is a bug here!
+for i in range(n_clusters_0):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(weights_0[0,1,:,:,0])
 
 # cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
 # time_context_0 =time_context_0[:,:,:,0]
 
 # cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
 # plt.imshow(TS_np_1[4])
+
+
 
 # cl.enqueue_copy(queue, TS_np, TS_bf).wait()
 # cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
