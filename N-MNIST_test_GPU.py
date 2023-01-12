@@ -86,8 +86,12 @@ n_pol_0 = 1
 tau_0 = 50e3
 suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
-# n_clusters_0 = 64
-n_clusters_0 = 1
+n_clusters_0 = 64
+# n_clusters_0 = 1
+lrate_0 = 1e-7
+lrate_th_0 = 2*lrate_0
+th_decay_0=0.5
+
 
 weights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
 weights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)
@@ -97,6 +101,9 @@ time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol
 mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+600
 closest_0 = np.zeros([batch_size],dtype=np.int32)
+lrate_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_0)) 
+lrate_th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_th_0)) 
+th_decay_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(th_decay_0)) 
 
 
 
@@ -115,7 +122,7 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
 #Dense Layer 2 data and parameters Classifier
 tau_1 = 50e3
 n_clusters_1=10
-lrate_1 = 1e-10
+lrate_1 = 1e-8
 
 
 weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
@@ -155,8 +162,8 @@ th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_0)
 lrate_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_1)) 
 
 #Layer 2 Class
-# loc_size = 1024;
-loc_size = res_x*res_y*n_clusters_0
+loc_size = 256;
+# loc_size = res_x*res_y*n_clusters_0
 
 global_space_1=np.array([batch_size, loc_size])#Max local size
 local_space_1=np.array([1, loc_size])
@@ -186,12 +193,16 @@ f = open('Libs/cl_kernels/class_S.cl', 'r')
 fstr4 = "".join(f.readlines())
 f = open('Libs/cl_kernels/class_w_update.cl', 'r')
 fstr5 = "".join(f.readlines())
+f = open('Libs/cl_kernels/conv_w_update.cl', 'r')
+fstr6 = "".join(f.readlines())
+f = open('Libs/cl_kernels/conv_th_update.cl', 'r')
+fstr7 = "".join(f.readlines())
 # print(fstr)
-program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5).build(options='-cl-std=CL2.0')
+program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options='-cl-std=CL2.0')
 
 #%%TRAIN SET
 rec = 0
-for epoch_i in range(30): 
+for epoch_i in range(12): 
     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
@@ -295,16 +306,33 @@ for epoch_i in range(30):
                                       n_clusters_1_bf, event_idx_bf, n_max_events_bf,
                                       weights_1_bf, train_batch_labels_bf,                          
                                       lrate_1_bf, dweights_1_bf, bevskip_bf)
-                                  
+        
+        kernel=program.conv_w_update(queue, global_space_0, local_space_0, 
+                                      ts_bf, surf_x_0_bf, surf_y_0_bf, n_pol_0_bf,
+                                      n_clusters_0_bf, event_idx_bf, n_max_events_bf,
+                                      weights_0_bf, closest_0_bf,                     
+                                      lrate_0_bf, S1_bf, dS1_bf, dweights_1_bf, bevskip_bf)
+ 
+        global_space = np.array([batch_size, n_clusters_0])
+        local_space = np.array([1, n_clusters_0])
+
+        kernel=program.conv_th_update(queue, global_space, local_space,
+                                      ts_bf, n_clusters_0_bf, event_idx_bf, n_max_events_bf,
+                                      lrate_th_0_bf, closest_0_bf, S1_bf, dS1_bf,                    
+                                      distances_0_bf, th_0_bf, th_decay_0_bf, bevskip_bf)
         
         kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
         
 
         # print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
     
-    cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()#TODO Solve a bug in class_infer that makes the number repeat in the wrong way
+    cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
     weights_1[:] = np.mean(weights_1, axis=0)
     weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1) #TODO check if there is a more efficient way than doing this
+    #TODO plot weights_0 !
+    cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
+    weights_0[:] = np.mean(weights_0, axis=0)
+    weights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
     # plt.imshow(weights_1[4,0,:,:,0])
     
 

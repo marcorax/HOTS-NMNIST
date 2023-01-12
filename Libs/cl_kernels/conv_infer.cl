@@ -11,7 +11,7 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                          __global int *n_pol_b, __global int *n_clusters_b, 
                          __global int *ev_i_b, __global int *n_events_b, 
                          __global int *tcontext, __global int *ts_mask,
-                         __global float *weights, __global float *th_0,
+                         __global float *weights, __global float *th,
                          __global float *partial_sum, __global float *distances,
                          __global int *closest, __global float *TS,
                          __global float *dweights, __global int *fevskip)
@@ -171,7 +171,7 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
         
             lin_idx = idx2d(i_file, (int) get_global_size(0), closest[i_file], 
                             n_clusters);
-            if (min_distance>th_0[lin_idx]){
+            if (min_distance>th[lin_idx]){
                 fevskip[i_file] = 1;
             }
         
