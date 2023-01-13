@@ -70,12 +70,12 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
                             loc_idx = idx2d(i_file, (int) get_global_size(0),
                                            (int) get_local_id(1),
                                            (int) get_local_size(1)); 
-                            partial_sum[loc_idx]+=ts_value;}
+                            partial_sum[loc_idx] = partial_sum[loc_idx] + ts_value;}
                         else{
                             loc_idx = idx2d(i_file, (int) get_global_size(0), 
                                             (int) get_local_id(1),
                                             (int) get_local_size(1)); 
-                            partial_sum[loc_idx]-=ts_value;}
+                            partial_sum[loc_idx] = partial_sum[loc_idx] - ts_value/(n_clusters-1);}
                     }                 
                 }  
             }

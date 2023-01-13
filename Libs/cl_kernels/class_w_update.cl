@@ -48,7 +48,7 @@ __kernel void class_w_update(__global int *ts, __global int *res_x_b,
                                 n_clusters, 0, res_x, 0, res_y, 0, n_pol)
                                 + loc_idx;
                             
-                weights[lin_idx] = lrate*dweights[lin_idx];
+                weights[lin_idx] = weights[lin_idx] + lrate*dweights[lin_idx];
                 
                 }  
             }

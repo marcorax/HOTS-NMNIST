@@ -129,12 +129,14 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
                                     loc_idx;
                 
                     //Euclidean is causing a good chunk of approx errors, moving to L1 
-                    elem_distance = fabs(weights[lin_idx]-ts_value);
+//                     elem_distance = fabs(weights[lin_idx]-ts_value);
+                    elem_distance = pow(weights[lin_idx]-ts_value, 2.0f);
+
                     //save the weight change for the fb. to save computation
                     dweights[lin_idx] = ts_value-weights[lin_idx];
                     loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
                                    (int) get_local_size(1)); 
-                    partial_sum[loc_idx]+=elem_distance;
+                    partial_sum[loc_idx] = partial_sum[loc_idx] + elem_distance;
                 }
             } 
             
@@ -172,7 +174,8 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
         if (closest[i_file]==batch_labels[i_file] && ts_i!=-1 && fevskip[i_file]==0){
             correct_ev[i_file] += 1;
         }  
-    
+        
+        fevskip[i_file]==0;
     }
             
 }

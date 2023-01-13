@@ -88,20 +88,20 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
                         ts_value=tmp_ts_value;                                                                 
                     }                 
                 }  
+            
+                //Debug Index (save each event)
+        //         lin_idx = idx5d(i_file, (int) get_global_size(0), 
+        //                         ev_i, n_events, 0, surf_x, 0, surf_y, 0, n_pol)
+        //                         + (int) get_local_id(1) 
+        //                         + i* (int) get_local_size(1);
+        
+                lin_idx = idx4d(i_file, (int) get_global_size(0), 
+                                0, surf_x, 0, surf_y, 0, n_pol) +
+                                loc_idx;
+            
+                TS[lin_idx] = ts_value;
+                ts_value=0;//reset ts_value
             }
-        //Debug Index (save each event)
-//         lin_idx = idx5d(i_file, (int) get_global_size(0), 
-//                         ev_i, n_events, 0, surf_x, 0, surf_y, 0, n_pol)
-//                         + (int) get_local_id(1) 
-//                         + i* (int) get_local_size(1);
-
-        lin_idx = idx4d(i_file, (int) get_global_size(0), 
-                        0, surf_x, 0, surf_y, 0, n_pol)
-                        + (int) get_local_id(1) 
-                        + i* (int) get_local_size(1);
-    
-        TS[lin_idx] = ts_value;
-        ts_value=0;//reset ts_value
 
         }    
     
@@ -118,20 +118,20 @@ __kernel void conv_infer(__global int *lkt, __global int *xs,__global int *ys,
     //                                 + i* (int) get_local_size(1);
     
                     lin_idx = idx4d(i_file, (int) get_global_size(0), 
-                                    0, surf_x, 0, surf_y, 0, n_pol)
-                                    + (int) get_local_id(1) 
-                                    + i* (int) get_local_size(1);
-                
+                                    0, surf_x, 0, surf_y, 0, n_pol)+
+                                    loc_idx;
+                                    
                     ts_value=TS[lin_idx]; //Leftover for debug  
                 
                 
                     lin_idx = idx5d(i_file, (int) get_global_size(0), cl, 
-                                    n_clusters, 0, surf_x, 0, surf_y, 0, n_pol)
-                                    + (int) get_local_id(1) 
-                                    + i* (int) get_local_size(1);
+                                    n_clusters, 0, surf_x, 0, surf_y, 0, n_pol)+
+                                    loc_idx;
                 
                     //Euclidean is causing a good chunk of approx errors, moving to L1 
-                    elem_distance = fabs(weights[lin_idx]-ts_value);
+//                     elem_distance = fabs(weights[lin_idx]-ts_value);
+                    elem_distance = pow(weights[lin_idx]-ts_value, 2.0f);
+
                     //save the weight change for the fb. to save computation
                     dweights[lin_idx] = ts_value-weights[lin_idx];
                     loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
