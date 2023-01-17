@@ -63,7 +63,7 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
                             
                 if (ts_mask[lin_idx]==1){
                     tmp_ts_value = exp( ((float)(tcontext[lin_idx]-ts_i)) / (float) tau);
-                    if (tmp_ts_value>=0 && tmp_ts_value<=1){//doublecheck for overflowing
+                    if (tmp_ts_value>=0 && tmp_ts_value<=1){//floatcheck for overflowing
                         ts_value=tmp_ts_value;
 
                         if (cl_index==loc_idx){
@@ -75,7 +75,7 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
                             loc_idx = idx2d(i_file, (int) get_global_size(0), 
                                             (int) get_local_id(1),
                                             (int) get_local_size(1)); 
-                            partial_sum[loc_idx] = partial_sum[loc_idx] - ts_value/(n_clusters-1);}
+                            partial_sum[loc_idx] = partial_sum[loc_idx] - ts_value/(float)(n_clusters-1);}
                     }                 
                 }  
             }

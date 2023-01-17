@@ -74,32 +74,33 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 256
+batch_size = 32
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
 
 #Conv Layer 1 data and parameters
-surf_x_0 = 11
-surf_y_0 = 11
+surf_x_0 = 7
+surf_y_0 = 7
 n_pol_0 = 1
-tau_0 = 50e4
+tau_0 = 5e4
 suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
 n_clusters_0 = 64
 # n_clusters_0 = 1
-lrate_0 = 5e-9
-lrate_th_0 = 1e6*lrate_0
-th_decay_0=80
+lrate_0 = 1e-5
+lrate_th_0 = 1e-5
+th_decay_0=0.80
 
 
 weights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
-weights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)*1e-11
+weights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)#*1e-11#TODO remember these ones might create some problems
+
 dweights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
-dweights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)*1e-11
+dweights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)#*1e-11
 time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
-th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+150
+th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+80
 closest_0 = np.zeros([batch_size],dtype=np.int32)
 lrate_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_0)) 
 lrate_th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_th_0)) 
@@ -116,7 +117,7 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
     for rel_y in np.arange(-surf_y_0//2,surf_y_0//2)+1:
         for rel_p in range(n_pol_0):
             lkt_0[count_tmp] = rel_x*(res_y+surf_y_0-1)*n_pol_0 + (rel_y)*n_pol_0 + rel_p
-            count_tmp+=1;
+            count_tmp+=1;64
 
 
 #Dense Layer 2 data and parameters Classifier
@@ -202,7 +203,8 @@ program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options
 
 #%%TRAIN SET
 rec = 0
-for epoch_i in range(30): 
+n_batches = 54
+for batch_i in range(n_batches): 
     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
@@ -327,20 +329,19 @@ for epoch_i in range(30):
                                       distances_0_bf, th_0_bf, th_decay_0_bf, bevskip_bf)
         
         kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
-        
-        # cl.enqueue_copy(queue, TS_np, TS_bf).wait()
-        # plt.imshow(TS_np[4]) #TS seems right 
-        
-        # cl.enqueue_copy(queue, S1, S1_bf).wait()
-        # cl.enqueue_copy(queue, dS1, dS1_bf).wait()
-        # # cl.enqueue_copy(queue, closest_0, closest_0_bf).wait()
-        # cl.enqueue_copy(queue, closest_1, closest_1_bf).wait()
+
+        cl.enqueue_copy(queue, S1, S1_bf).wait()
+        cl.enqueue_copy(queue, dS1, dS1_bf).wait()
+        # cl.enqueue_copy(queue, closest_0, closest_0_bf).wait()
+        cl.enqueue_copy(queue, closest_1, closest_1_bf).wait()
 
 
 
-        # print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
-        # print("S file 1: "+str(S1[0])+" dS file 1: "+str(dS1[0]))
-        # print("closest 0 : "+str(closest_1[0])+" label : "+str(train_batch_labels[0]))
+        print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
+        print("S file 1: "+str(S1[0])+" dS file 1: "+str(dS1[0]))
+        print("closest 1 : "+str(closest_1[0])+" label : "+str(train_batch_labels[0]))
+        print("closest 0 : "+str(closest_0[0]))#TODO Check why it's always closest 0
+
 
 
     
@@ -366,10 +367,12 @@ for epoch_i in range(30):
     avg_accuracy = np.mean(correct_ev / processed_ev)
 
     end_exec = time.time()
-
+    
+    print("Batch: "+str(batch_i)+" of "+str(n_batches))
     print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
     print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
     print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
+#%% Plot
 
 cl.enqueue_copy(queue, dweights_0, dweights_0_bf).wait()
 cl.enqueue_copy(queue, dweights_1, dweights_1_bf).wait()
@@ -381,28 +384,27 @@ cl.enqueue_copy(queue, fevskip, fevskip_bf).wait()
 cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
 
 
-
-# #TODO cluster 0 does not seem to learn anything at all !!! underflow in layer 2 might be causing this
+# #TODO cluster 0 seems to be learning real weird stuff
 for i in range(n_clusters_0):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(weights_0[0,i,:,:,0])
+    plt.imshow(weights_0[1,i,:,:,0].transpose())
     
 for i in range(n_clusters_1):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(weights_1[1,i,:,:,0])
+    plt.imshow(weights_1[1,i,:,:,2].transpose())
 
 # cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
 # time_context_0 =time_context_0[:,:,:,0]
 
-# cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+cl.enqueue_copy(queue, TS_np, TS_bf).wait()
 # cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
 
-# plt.imshow(TS_np[220])
-# for i in range(n_clusters_0):
+# # plt.imshow(TS_np[220])
+# for i in range(10):
 #     plt.figure()
-#     plt.imshow(TS_np_1[220,:,:,i])
+#     plt.imshow(TS_np[i,:,:,0])
 
 
 
@@ -422,7 +424,8 @@ cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
 
 #%%#TEST SET
 rec = 0
-for epoch_i in range(1): 
+n_batches = 1
+for batch_i in range(n_batches): 
     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
@@ -463,7 +466,7 @@ for epoch_i in range(1):
         n_events_batch[i] = n_events
         
     rec+=batch_size 
-    batch_size=len(train_labels[rec:rec+batch_size])
+    batch_size=len(test_labels[rec:rec+batch_size])
         
     time_context_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_0)
     mask_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_0)
@@ -533,7 +536,8 @@ for epoch_i in range(1):
     avg_accuracy = np.mean(correct_ev / processed_ev)
 
     end_exec = time.time()
-
+    
+    print("Batch: "+str(batch_i)+" of "+str(n_batches))
     print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
     print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
     print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")

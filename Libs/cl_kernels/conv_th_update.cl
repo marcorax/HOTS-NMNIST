@@ -43,15 +43,19 @@ __kernel void conv_th_update(__global int *ts, __global int *n_clusters_b,
             if (i_cluster<n_clusters){    
                     lin_idx = idx2d(i_file, (int) get_global_size(0), i_cluster, n_clusters);
                     
+                    tau_th=tau_th*th[lin_idx];
+                    
                     if(i_cluster==closest[i_file]){                         
                          th[lin_idx] = th[lin_idx] +
-                                       lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th) +
-                                       (0.01f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
+//                                        lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
+                                        (0.01f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
                     }
-                    else if ((distances[lin_idx]-th[lin_idx])<0 && dS[i_file]>0 && S[i_file]>0){
+//                     else if ((distances[lin_idx]-th[lin_idx])<0 && dS[i_file]>0 && S[i_file]>0){
+                    else if (dS[i_file]>0){
+
                          th[lin_idx] = th[lin_idx] -
-                                       lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th) -
-                                       (0.01f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);                    
+//                                        lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
+                                        (0.01f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);                    
                     }
                     
                     
