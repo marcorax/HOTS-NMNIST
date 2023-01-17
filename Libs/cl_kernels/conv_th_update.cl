@@ -9,7 +9,8 @@ __kernel void conv_th_update(__global int *ts, __global int *n_clusters_b,
                              __global float *lrate_b, __global int *closest,
                              __global float *S, __global float *dS,
                              __global float *distances,  __global float *th, 
-                             __global float *tau_th_b, __global int *bevskip)
+                             __global float *tau_th_b, __global int *bevskip,
+                             __global int *prec_m_bf)
 {
     unsigned int i_file = get_global_id(0);
     unsigned int n_iter;

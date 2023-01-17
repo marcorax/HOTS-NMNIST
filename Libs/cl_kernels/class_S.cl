@@ -19,7 +19,7 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
     int tau=*tau_b;
     int ev_i=*ev_i_b;
     int n_events=*n_events_b;    
-  
+
 
     float ts_value; // default allocation is private, faster than local
     float tmp_ts_value;  
@@ -75,7 +75,7 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
                             loc_idx = idx2d(i_file, (int) get_global_size(0), 
                                             (int) get_local_id(1),
                                             (int) get_local_size(1)); 
-                            partial_sum[loc_idx] = partial_sum[loc_idx] - ts_value/(float)(n_clusters-1);}
+                            partial_sum[loc_idx] = partial_sum[loc_idx] - ts_value/(n_clusters-1);}
                     }                 
                 }  
             }

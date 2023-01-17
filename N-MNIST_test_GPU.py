@@ -74,7 +74,7 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 32
+batch_size = 256
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
@@ -100,7 +100,7 @@ dweights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dt
 dweights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)#*1e-11
 time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
-th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+80
+th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+50
 closest_0 = np.zeros([batch_size],dtype=np.int32)
 lrate_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_0)) 
 lrate_th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_th_0)) 
@@ -117,16 +117,18 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
     for rel_y in np.arange(-surf_y_0//2,surf_y_0//2)+1:
         for rel_p in range(n_pol_0):
             lkt_0[count_tmp] = rel_x*(res_y+surf_y_0-1)*n_pol_0 + (rel_y)*n_pol_0 + rel_p
-            count_tmp+=1;64
+            count_tmp+=1
 
 
 #Dense Layer 2 data and parameters Classifier
-tau_1 = 1e2
+tau_1 = 5e4
 n_clusters_1=10
-lrate_1 = 1e-9
+lrate_1 = 1e-6
 
 
 weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
+weights_1[:] = np.random.rand(n_labels, res_x, res_y, n_clusters_0)#*1e-11#TODO remember these ones might create some problems
+
 dweights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
 time_context_1 = np.zeros([batch_size, res_x, res_y, n_clusters_0],dtype=np.int32)
 mask_1 = np.zeros([batch_size, res_x, res_y, n_clusters_0],dtype=np.int32)
@@ -203,8 +205,10 @@ program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options
 
 #%%TRAIN SET
 rec = 0
-n_batches = 54
-for batch_i in range(n_batches): 
+n_batches = 234
+batch_i = 0
+
+for batch_i in range(n_batches):    
     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
@@ -223,6 +227,12 @@ for batch_i in range(n_batches):
     TS_np_1 = -1*np.ones((batch_size, res_x, res_y, n_clusters_0),dtype=np.float32)
     dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_0)
     dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_1)
+    
+    weights_update_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float64)
+    weights_update_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float64) #classifier
+
+    weights_update_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_update_0)
+    weights_update_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_update_1)
 
     distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float32)    
     distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float32)
@@ -274,7 +284,7 @@ for batch_i in range(n_batches):
     dS1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dS1)
     
     # fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
-    fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
+    fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)#TODO Check why cluster1 does not change
     bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
         
 
@@ -311,28 +321,28 @@ for batch_i in range(n_batches):
         kernel=program.class_w_update(queue, global_space_1, local_space_1, 
                                       ts_bf, res_x_bf, res_y_bf, n_clusters_0_bf,
                                       n_clusters_1_bf, event_idx_bf, n_max_events_bf,
-                                      weights_1_bf, train_batch_labels_bf,                          
+                                      weights_update_1_bf, train_batch_labels_bf,                          
                                       lrate_1_bf, dweights_1_bf, bevskip_bf)
         
         kernel=program.conv_w_update(queue, global_space_0, local_space_0, 
                                       ts_bf, surf_x_0_bf, surf_y_0_bf, n_pol_0_bf,
                                       n_clusters_0_bf, event_idx_bf, n_max_events_bf,
-                                      weights_0_bf, closest_0_bf,                     
+                                      weights_update_0_bf, closest_0_bf,                     
                                       lrate_0_bf, S1_bf, dS1_bf, dweights_0_bf, bevskip_bf)
  
         global_space = np.array([batch_size, n_clusters_0])
         local_space = np.array([1, n_clusters_0])
 
-        kernel=program.conv_th_update(queue, global_space, local_space,
-                                      ts_bf, n_clusters_0_bf, event_idx_bf, n_max_events_bf,
-                                      lrate_th_0_bf, closest_0_bf, S1_bf, dS1_bf,                    
-                                      distances_0_bf, th_0_bf, th_decay_0_bf, bevskip_bf)
+        # kernel=program.conv_th_update(queue, global_space, local_space,
+        #                               ts_bf, n_clusters_0_bf, event_idx_bf, n_max_events_bf,
+        #                               lrate_th_0_bf, closest_0_bf, S1_bf, dS1_bf,                    
+        #                               distances_0_bf, th_0_bf, th_decay_0_bf, bevskip_bf)
         
         kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
 
         cl.enqueue_copy(queue, S1, S1_bf).wait()
         cl.enqueue_copy(queue, dS1, dS1_bf).wait()
-        # cl.enqueue_copy(queue, closest_0, closest_0_bf).wait()
+        cl.enqueue_copy(queue, closest_0, closest_0_bf).wait()
         cl.enqueue_copy(queue, closest_1, closest_1_bf).wait()
 
 
@@ -340,17 +350,26 @@ for batch_i in range(n_batches):
         print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
         print("S file 1: "+str(S1[0])+" dS file 1: "+str(dS1[0]))
         print("closest 1 : "+str(closest_1[0])+" label : "+str(train_batch_labels[0]))
-        print("closest 0 : "+str(closest_0[0]))#TODO Check why it's always closest 0
+        print("closest 0 : "+str(closest_0[0]))
+        
+    # if batch_i == n_batches-1:
+    #     batch_i=0
+    # else:
+    #     batch_i+=1
 
+
+
+    cl.enqueue_copy(queue, weights_update_0, weights_update_0_bf).wait()
+    cl.enqueue_copy(queue, weights_update_1, weights_update_1_bf).wait()
 
 
     
     cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
-    weights_1[:] = np.mean(weights_1, axis=0)
+    weights_1[:] += np.sum(weights_update_1, axis=0)
     weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1) #TODO check if there is a more efficient way than doing this
 
     cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
-    weights_0[:] = np.mean(weights_0, axis=0)
+    weights_0[:] += np.sum(weights_update_0, axis=0)
     weights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
     # plt.imshow(weights_1[4,0,:,:,0])
     
@@ -388,12 +407,22 @@ cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
 for i in range(n_clusters_0):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(weights_0[1,i,:,:,0].transpose())
+    plt.imshow(weights_0[0,i,:,:,0].transpose())
+    
+# for i in range(n_clusters_0):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(np.sum(weights_update_0[:,i,:,:,0], axis=0).transpose())
     
 for i in range(n_clusters_1):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(weights_1[1,i,:,:,2].transpose())
+    plt.imshow(weights_1[0,i,:,:,0].transpose())
+
+# for i in range(n_clusters_1):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(np.sum(weights_update_1[:,i,:,:,0], axis=0).transpose())
 
 # cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
 # time_context_0 =time_context_0[:,:,:,0]
@@ -404,7 +433,7 @@ cl.enqueue_copy(queue, TS_np, TS_bf).wait()
 # # plt.imshow(TS_np[220])
 # for i in range(10):
 #     plt.figure()
-#     plt.imshow(TS_np[i,:,:,0])
+#     plt.imshow(TS_np[i,:,:,0].transpose())
 
 
 

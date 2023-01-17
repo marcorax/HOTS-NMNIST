@@ -7,7 +7,7 @@
 __kernel void class_w_update(__global int *ts, __global int *res_x_b, 
                           __global int *res_y_b, __global int *n_pol_b,
                           __global int *n_clusters_b, __global int *ev_i_b,
-                          __global int *n_events_b, __global float *weights,                          
+                          __global int *n_events_b, __global double *weights_update,                          
                           __global int *batch_labels, __global float *lrate_b,
                           __global float *dweights, __global int *bevskip)
 {
@@ -47,11 +47,15 @@ __kernel void class_w_update(__global int *ts, __global int *res_x_b,
                 lin_idx = idx5d(i_file, (int) get_global_size(0), batch_labels[i_file], 
                                 n_clusters, 0, res_x, 0, res_y, 0, n_pol)
                                 + loc_idx;
-                            
-                weights[lin_idx] = weights[lin_idx] + ((float)lrate)*dweights[lin_idx];
-                
-                }  
-            }
+                                
+                if (ev_i==0){
+                    weights_update[lin_idx] = ((double)lrate)*((double)dweights[lin_idx]);
+                }
+                else{    
+                    weights_update[lin_idx] = weights_update[lin_idx] + ((double)lrate)*((double)dweights[lin_idx]);
+                }
+            }  
+        }
             
     }
 }
