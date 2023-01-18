@@ -7,7 +7,7 @@
 __kernel void class_w_update(__global int *ts, __global int *res_x_b, 
                           __global int *res_y_b, __global int *n_pol_b,
                           __global int *n_clusters_b, __global int *ev_i_b,
-                          __global int *n_events_b, __global double *weights_update,                          
+                          __global int *n_events_b, __global float *weights_update,                          
                           __global int *batch_labels, __global float *lrate_b,
                           __global float *dweights, __global int *bevskip)
 {
@@ -49,10 +49,10 @@ __kernel void class_w_update(__global int *ts, __global int *res_x_b,
                                 + loc_idx;
                                 
                 if (ev_i==0){
-                    weights_update[lin_idx] = ((double)lrate)*((double)dweights[lin_idx]);
+                    weights_update[lin_idx] = ((float)lrate)*((float)dweights[lin_idx]);
                 }
                 else{    
-                    weights_update[lin_idx] = weights_update[lin_idx] + ((double)lrate)*((double)dweights[lin_idx]);
+                    weights_update[lin_idx] = weights_update[lin_idx] + ((float)lrate)*((float)dweights[lin_idx]);
                 }
             }  
         }

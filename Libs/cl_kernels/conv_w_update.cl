@@ -7,7 +7,7 @@
 __kernel void conv_w_update(__global int *ts, __global int *surf_x_b, 
                           __global int *surf_y_b, __global int *n_pol_b,
                           __global int *n_clusters_b, __global int *ev_i_b,
-                          __global int *n_events_b, __global double *weights_update,                          
+                          __global int *n_events_b, __global float *weights_update,                          
                           __global int *closest, __global float *lrate_b,
                           __global float *S, __global float *dS,
                           __global float *dweights, __global int *bevskip)
@@ -50,13 +50,13 @@ __kernel void conv_w_update(__global int *ts, __global int *surf_x_b,
                                 + loc_idx;
                 
                 if (ev_i==0){
-                    weights_update[lin_idx] =  (double)(0.01f)*(double)S[i_file]*(double)lrate*(double)dweights[lin_idx] + 
-                                               (double)dS[i_file]*(double)lrate*(double)dweights[lin_idx];
+                    weights_update[lin_idx] =  (float)(0.01f)*(float)S[i_file]*(float)lrate*(float)dweights[lin_idx] + 
+                                               (float)dS[i_file]*(float)lrate*(float)dweights[lin_idx];
                 }  
                 else{         
                     weights_update[lin_idx] = weights_update[lin_idx] + 
-                                              (double)(0.01f)*(double)S[i_file]*(double)lrate*(double)dweights[lin_idx] + 
-                                              (double)dS[i_file]*(double)lrate*(double)dweights[lin_idx];
+                                              (float)(0.01f)*(float)S[i_file]*(float)lrate*(float)dweights[lin_idx] + 
+                                              (float)dS[i_file]*(float)lrate*(float)dweights[lin_idx];
                 }
             }  
         }
