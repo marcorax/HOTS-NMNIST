@@ -63,7 +63,7 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
                             
                 if (ts_mask[lin_idx]==1){
                     tmp_ts_value = exp( ((float)(tcontext[lin_idx]-ts_i)) / (float) tau);
-                    if (tmp_ts_value>=0 && tmp_ts_value<=1){//floatcheck for overflowing
+                    if (tmp_ts_value>0 && tmp_ts_value<=1){//floatcheck for overflowing
                         ts_value=tmp_ts_value;
 
                         if (cl_index==loc_idx){

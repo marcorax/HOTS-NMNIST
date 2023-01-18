@@ -129,7 +129,9 @@ __kernel void class_infer(__global int *xs,__global int *ys, __global int *ts,
                                     loc_idx;
                 
                     //Euclidean is causing a good chunk of approx errors, moving to L1 
-                    elem_distance = fabs(weights[lin_idx]-ts_value);
+//                     elem_distance = fabs(weights[lin_idx]-ts_value);
+                    elem_distance = pow(weights[lin_idx]-ts_value, 2.0f);
+
 
                     //save the weight change for the fb. to save computation
                     dweights[lin_idx] = ts_value-weights[lin_idx];

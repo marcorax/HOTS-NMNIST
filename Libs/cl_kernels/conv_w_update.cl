@@ -46,16 +46,16 @@ __kernel void conv_w_update(__global int *ts, __global int *surf_x_b,
             loc_idx = (int)get_local_id(1)+i*(int) get_local_size(1);
             if (loc_idx<tssize){    
                 lin_idx = idx5d(i_file, (int) get_global_size(0), closest[i_file], 
-                                n_clusters, 0, surf_x, ~0, surf_y, 0, n_pol)
+                                n_clusters, 0, surf_x, 0, surf_y, 0, n_pol)
                                 + loc_idx;
                 
                 if (ev_i==0){
-                    weights_update[lin_idx] =  (float)(0.01f)*(float)S[i_file]*(float)lrate*(float)dweights[lin_idx] + 
+                    weights_update[lin_idx] =  (float)(0.001f)*(float)S[i_file]*(float)lrate*(float)dweights[lin_idx] + 
                                                (float)dS[i_file]*(float)lrate*(float)dweights[lin_idx];
                 }  
                 else{         
                     weights_update[lin_idx] = weights_update[lin_idx] + 
-                                              (float)(0.01f)*(float)S[i_file]*(float)lrate*(float)dweights[lin_idx] + 
+                                              (float)(0.001f)*(float)S[i_file]*(float)lrate*(float)dweights[lin_idx] + 
                                               (float)dS[i_file]*(float)lrate*(float)dweights[lin_idx];
                 }
             }  

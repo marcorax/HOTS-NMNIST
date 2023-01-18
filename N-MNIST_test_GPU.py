@@ -74,23 +74,23 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 16
+batch_size = 256
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
 
 #Conv Layer 1 data and parameters
-surf_x_0 = 3
-surf_y_0 = 3
+surf_x_0 = 19
+surf_y_0 = 19
 n_pol_0 = 1
-tau_0 = 5e4
+tau_0 = 1e5
 suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
 n_clusters_0 = 8
 # n_clusters_0 = 1
-lrate_0 = 1e-6
-lrate_th_0 = 5e-5
-th_decay_0=0.80
+lrate_0 = 1e-4
+lrate_th_0 = 1e-4
+th_decay_0=0.20
 
 
 weights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
@@ -100,7 +100,7 @@ dweights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dt
 dweights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)#*1e-11
 time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
-th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+50
+th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+180
 closest_0 = np.zeros([batch_size],dtype=np.int32)
 lrate_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_0)) 
 lrate_th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_th_0)) 
@@ -121,12 +121,12 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
 
 
 #Dense Layer 2 data and parameters Classifier
-tau_1 = 1e4
+tau_1 = 1e5
 n_clusters_1=10
-lrate_1 = 1e-6
+lrate_1 = 5e-6
 
 weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
-weights_1[:] = np.random.rand(n_labels, res_x, res_y, n_clusters_0)#*1e-11#TODO remember these ones might create some problems
+weights_1[:] = np.random.rand(n_labels, res_x, res_y, n_clusters_0)#TODO remember these ones might create some problems
 
 dweights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
 time_context_1 = np.zeros([batch_size, res_x, res_y, n_clusters_0],dtype=np.int32)
@@ -204,7 +204,7 @@ program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options
 
 #%%TRAIN SET
 rec = 0
-n_batches = 5
+n_batches = 80
 batch_i = 0
 
 for batch_i in range(n_batches):    
@@ -243,10 +243,10 @@ for batch_i in range(n_batches):
     correct_ev = np.zeros([batch_size],dtype=np.int32)
     train_batch_labels = np.zeros([batch_size],dtype=np.int32)
     n_events_batch = np.zeros([batch_size],dtype=np.int32)
-    S1 = np.zeros([batch_size],dtype=np.float32)
-    dS1 = np.zeros([batch_size],dtype=np.float32)
     # S1 = np.zeros([batch_size],dtype=np.float32)
-    # dS1 = np.ones([batch_size],dtype=np.float32)
+    # dS1 = np.zeros([batch_size],dtype=np.float32)
+    S1 = np.ones([batch_size],dtype=np.float32)
+    dS1 = np.ones([batch_size],dtype=np.float32)
 
     
     for i in range(batch_size):
@@ -355,7 +355,10 @@ for batch_i in range(n_batches):
         # cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
 
 
-        # distances_tmp =  np.sum(np.abs(TS_np_1[0,None]-weights_1[0]),axis=(1,2,3))
+        # # distances_tmp =  np.sum(np.abs(TS_np_1[0,None]-weights_1[0]),axis=(1,2,3))
+        # distances_tmp =  np.sum((TS_np_1[0,None]-weights_1[0])**2,axis=(1,2,3))
+        # distances_tmp_prec = np.asarray((TS_np_1[0,None]-weights_1[0])**2,dtype=np.float64)
+        # distances_tmp_prec = np.sum(distances_tmp_prec,axis=(1,2,3))
         # np_closest = np.argmin(distances_tmp)
         
         # error=np.sum(np.abs(distances_tmp-distances_1[0]))
@@ -425,12 +428,14 @@ cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
 
 
 
-# #TODO cluster 0 seems to be learning real weird stuff
-# for i in range(n_clusters_0):
-#     plt.figure()
-#     plt.title("cluster: "+str(i))
-#     plt.imshow(weights_0[0,i,:,:,0].transpose())
+# # #TODO cluster 0 seems to be learning real weird stuff
+for i in range(n_clusters_0):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(weights_0[0,i,:,:,0].transpose())
     
+
+#TODO something's wrong with this thing here!!! weight updates seem really wrong !!!
 # for i in range(n_clusters_0):
 #     plt.figure()
 #     plt.title("cluster: "+str(i))
@@ -439,12 +444,12 @@ cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
 # for i in range(n_clusters_1):
 #     plt.figure()
 #     plt.title("cluster: "+str(i))
-#     plt.imshow(weights_1[0,i,:,:,0].transpose())
+#     plt.imshow(weights_1[0,i,:,:,1].transpose())
 
 # for i in range(n_clusters_1):
 #     plt.figure()
 #     plt.title("cluster: "+str(i))
-#     plt.imshow(np.sum(weights_update_1[:,i,:,:,0], axis=0).transpose())
+#     plt.imshow(np.sum(weights_update_1[:,i,:,:,3], axis=0).transpose())
 
 # cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
 # time_context_0 =time_context_0[:,:,:,0]
@@ -452,7 +457,7 @@ cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
 cl.enqueue_copy(queue, TS_np, TS_bf).wait()
 # cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
 
-# # plt.imshow(TS_np[220])
+# plt.imshow(TS_np[220])
 # for i in range(10):
 #     plt.figure()
 #     plt.imshow(TS_np[i,:,:,0].transpose())

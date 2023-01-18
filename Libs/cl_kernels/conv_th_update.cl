@@ -9,8 +9,7 @@ __kernel void conv_th_update(__global int *ts, __global int *n_clusters_b,
                              __global float *lrate_b, __global int *closest,
                              __global float *S, __global float *dS,
                              __global float *distances,  __global float *th, 
-                             __global float *tau_th_b, __global int *bevskip,
-                             __global int *prec_m_bf)
+                             __global float *tau_th_b, __global int *bevskip)
 {
     unsigned int i_file = get_global_id(0);
     unsigned int n_iter;
@@ -48,15 +47,15 @@ __kernel void conv_th_update(__global int *ts, __global int *n_clusters_b,
                     
                     if(i_cluster==closest[i_file]){                         
                          th[lin_idx] = th[lin_idx] +
-//                                        lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
-                                        (0.01f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
+                                        lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
+                                        (0.001f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
                     }
 //                     else if ((distances[lin_idx]-th[lin_idx])<0 && dS[i_file]>0 && S[i_file]>0){
                     else if (dS[i_file]>0){
 
                          th[lin_idx] = th[lin_idx] -
-//                                        lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
-                                        (0.01f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);                    
+                                        lrate*dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);
+                                        (0.001f)*lrate*S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th);                    
                     }
                     
                     
