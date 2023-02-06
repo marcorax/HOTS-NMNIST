@@ -538,6 +538,297 @@ fb_selected_weights_0 = weights_0
 fb_selected_weights_1 = weights_1
 
 
+#%% New Learning rule (dynamical thresholds!) two layers differential
+##TODO second hidden get stuck so lower only learns the two available features VXV (V,X)
+from pynput import keyboard
+
+surf_x = 5
+surf_y = 5
+n_clusters_0 = 5 
+n_clusters_1 = 6
+
+#Each word is 3 characters long and sentences have no spaces
+#Between words
+n_words = 2
+n_sentences = 2
+word_length = 3 
+
+weights_0 = np.random.rand(surf_x, surf_y, n_clusters_0)
+weights_1 = np.random.rand(n_clusters_0, word_length, n_clusters_1) 
+weights_2 = np.random.rand(n_clusters_1, n_words, n_sentences) #classifier
+
+th_0 = np.zeros(n_clusters_0)+10
+th_1 = np.zeros(n_clusters_1)+10
+
+
+
+
+
+fig, axs = plt.subplots(n_clusters_0)
+fig.suptitle("New L Features")
+
+n_all_events = len(concat_all_surfs)
+
+
+
+#initialize weights 0 to surfaces:
+
+# for cluster_i in range(n_clusters[0]):
+#     label=np.random.randint(0,9)
+#     recording=np.random.randint(0,len(train_surfs_0[label]))
+#     surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
+#     weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
+
+def on_press(key):
+    global pause_pressed
+    global print_lay
+    
+    print('{0} pressed'.format(
+        key))
+    if key.char == ('p'):
+        pause_pressed=True
+    if key.char == ('1'):
+        print_lay=1
+    if key.char == ('2'):
+        print_lay=2
+
+
+
+time_context_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
+time_context_fb_1 = np.zeros([n_clusters_1],dtype=int)
+
+time_context_2 = np.zeros([n_clusters_1, n_words],dtype=int)
+time_context_fb_2 = np.zeros([n_sentences],dtype=int)
+
+tau_1 = 5
+tau_2 = 5
+
+lrate_2 = 0.0005
+lrate_1 = 0.0005
+lrate_0 = 0.0005
+
+###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
+###seems that more units does not fix that, weirdly enough. too slow and other
+## characters creeps in.
+
+lrate_th_1 = 0.001
+lrate_th_0 = 0.001
+
+
+
+pause_pressed=False  
+print_lay=2  
+with keyboard.Listener(on_press=on_press) as listener:
+    
+    for epoch in range(3):   
+        for sentence_i in range(len(data_surf)):
+            n_events = len(data_surf[sentence_i])
+            sentence_surfs = data_surf[sentence_i]
+            computed_events = 0
+            event_accuracy = 0
+    
+            #event mask used to avoid exponential decay calculation for pixel 
+            # that did not generate an event yet
+            mask_start_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
+            mask_start_fb_1 = np.zeros([n_clusters_1],dtype=int)
+            
+            mask_start_2 = np.zeros([n_clusters_1, n_words],dtype=int)
+            mask_start_fb_2 = np.zeros([n_sentences],dtype=int)
+            
+            y_som_0=0
+            y_som_old_0=0
+            dt_y_som_0=0
+           
+            y_som_1=0
+            y_som_old_1=0
+            dt_y_som_1=0   
+            
+            for ts_i in range(n_events):
+                
+
+                label = data_labels[sentence_i]
+                ref_ch_pos = data_events[sentence_i][2][ts_i]
+                ref_word_pos = ref_ch_pos//word_length
+                ref_ts =  data_events[sentence_i][3][ts_i]
+                
+                rec_distances_0=np.sum((sentence_surfs[ts_i,:,:,None]-weights_0[:,:,:])**2,axis=(0,1))
+
+                
+                # Closest center with threshold computation
+                rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
+                # rec_closest_0=np.argmin(rec_distances_0,axis=0)
+
+
+                
+                # Layer 1 check
+                if (rec_distances_0[rec_closest_0]-th_0[rec_closest_0])<0:
+                       
+                    time_context_1[rec_closest_0,ref_ch_pos] = ref_ts
+                    mask_start_1[rec_closest_0,ref_ch_pos]=1
+                    
+                    # Extracting the single word ts
+                    beg_ch_index = ref_word_pos*word_length
+                    end_ch_index = (ref_word_pos+1)*word_length
+                    ts_lay_1 = np.exp((time_context_1[:,beg_ch_index:end_ch_index]\
+                                       -ref_ts)*mask_start_1[:,beg_ch_index:end_ch_index]/\
+                                          tau_1)*mask_start_1[:,beg_ch_index:end_ch_index]    
+
+                    
+                    rec_distances_1=np.sum((ts_lay_1[:,:,None]-weights_1[:,:,:])**2,axis=(0,1))
+
+                    
+                    rec_closest_1=np.argmin(rec_distances_1-th_1,axis=0)
+                    # rec_closest_1=np.argmin(rec_distances_1,axis=0)
+
+                    
+                    # Layer 2 check
+                    if (rec_distances_1[rec_closest_1]-th_1[rec_closest_1])<0:
+
+                        time_context_2[rec_closest_1,ref_word_pos] = ref_ts
+                        mask_start_2[rec_closest_1,ref_word_pos]=1
+                        
+                        ts_lay_2 = np.exp((time_context_2-ref_ts)*mask_start_2/\
+                                              tau_2)*mask_start_2                                 
+                        
+                        rec_distances_2=np.sum((ts_lay_2[:,:,None]-weights_2[:,:,:])**2,axis=(0,1))
+
+                        
+                        rec_closest_2=np.argmin(rec_distances_2,axis=0)
+                        
+                        
+                        ##FEEDBACK CALCULATIONS
+                        
+                        #Layer 2
+                        time_context_fb_2[rec_closest_2] = ref_ts
+                        mask_start_fb_2[rec_closest_2]=1    
+                        ts_fb_lay_2 = np.exp((time_context_fb_2-ref_ts)*mask_start_fb_2/tau_2)*mask_start_fb_2                                                        
+                        norm = n_sentences-1
+                        
+                        #supervised
+                        y_som_1=(ts_fb_lay_2[label]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=label]/norm),axis=0)) #normalized by activation
+                        
+                        #unsupervised
+                        # y_som_1=(ts_fb_lay_2[rec_closest_2]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=rec_closest_2]/norm),axis=0)) #normalized by activation
+        
+        
+                        dt_y_som_1 = y_som_1 - y_som_old_1
+                        y_som_old_1 = y_som_1
+                        
+                        #Layer 1
+                        time_context_fb_1[rec_closest_1] = ref_ts
+                        mask_start_fb_1[rec_closest_1]=1    
+                        ts_fb_lay_1 = np.exp((time_context_fb_1-ref_ts)*mask_start_fb_1/tau_1)*mask_start_fb_1                                                        
+                        norm = n_clusters_1-1
+                        
+                        y_som_0 = (ts_fb_lay_1[rec_closest_1]-np.sum((ts_fb_lay_1[np.arange(n_clusters_1)!=rec_closest_1]/norm),axis=0)) #normalized by activation
+                        
+                        y_som_0  = np.sign(y_som_1)*np.abs(y_som_0)
+            
+                        dt_y_som_0 = y_som_0 - y_som_old_0
+                        y_som_old_0 = y_som_0
+                        
+                        
+                        ##WEIGHTS AND TH UPDATE
+
+                        #Layer 2                       
+                        #supervised
+                        elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_2])
+                        weights_2[:,:,rec_closest_2]+=lrate_2*(dt_y_som_1*elem_distances_2[:]) + 0.01*lrate_2*(y_som_1*elem_distances_2[:])
+                        
+                        #unsupervised       
+                        # elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_1])
+                        # weights_2[:,:,rec_closest_1]+=lrate_2*elem_distances_2[:]
+
+                        #Layer 1
+                        #weights
+                        elem_distances_1 = (ts_lay_1[:,:]-weights_1[:,:,rec_closest_1])
+                        # rec_closest_1_one_hot = np.zeros([n_clusters_1])
+                        # rec_closest_1_one_hot[rec_closest_1]=1
+                        
+                        # keep only the distances for winners
+                        # elem_distances_1=elem_distances_1p[:,:,:]*rec_closest_1_one_hot[None,None,:]
+                        weights_1[:,:,rec_closest_1]+=lrate_1*(dt_y_som_1*elem_distances_1[:]) + 0.01*lrate_1*(y_som_1*elem_distances_1[:])
+                                   
+                        #treshold_coeff
+                        # for i_cluster in range(n_clusters_1):
+                        #     if (i_cluster==rec_closest_1) and (y_som_1<0):
+                        #         th_1[i_cluster] -= lrate_th_1*(th_1[rec_closest_1]-rec_distances_1[rec_closest_1])
+                       
+                        th_1[rec_closest_1] += (np.abs(y_som_1)-1)*lrate_th_1      
+        
+                        #Layer 0
+                        #weights
+                        elem_distances_0 = (sentence_surfs[ts_i,:,:,None]-weights_0[:,:,:])
+                        rec_closest_0_one_hot = np.zeros([n_clusters_0])
+                        rec_closest_0_one_hot[rec_closest_0]=1
+                        
+                        # Keep only the distances for winners
+                        elem_distances_0=elem_distances_0[:,:,:]*rec_closest_0_one_hot[None,None,:]
+                        weights_0[:,:,:]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + 0.01*lrate_0*(y_som_0*elem_distances_0[:]))
+
+
+                        # #treshold_coeff
+                        # for i_cluster in range(n_clusters_0):
+                        #     if (i_cluster==rec_closest_0) and (y_som_0<0):
+                        #         th_0[i_cluster] -= lrate_th_0*(th_0[rec_closest_0]-rec_distances_0[rec_closest_0])
+
+                        #treshold_coeff
+                        th_0[rec_closest_0] += (np.abs(y_som_0)-1)*lrate_th_0
+
+                                                  
+
+                        ## PROGRESS UPDATE
+                        rec_closest_2_one_hot = np.zeros([n_sentences])
+                        rec_closest_2_one_hot[rec_closest_2]=1
+                        class_rate=np.sum(rec_closest_2_one_hot,axis=0)
+                            
+                        computed_events += 1
+                        if rec_closest_2==label:
+                            result = "Correct"
+                            event_accuracy += 1
+        
+                        else:
+                            result = "Wrong"
+                        
+                        progress = computed_events/n_events
+                        rel_accuracy = event_accuracy/computed_events
+                        print("Epoch "+str(epoch)+", Sentence "+str(sentence_i)+"  Progress: "+str(progress*100)+"%   Relative Accuracy: "+ str(rel_accuracy))
+                        print("Prediction: "+result+str(label))
+                        
+                        if print_lay==1:
+                            #Layer0
+                            print("Y-som: "+str(y_som_0)+" dt Y-som: "+str(dt_y_som_0)+" Closest_center: "+str(rec_closest_0))
+                            print(rec_distances_0-th_0)
+                            print(th_0)
+                        elif print_lay==2:
+                            #Layer1
+                            print("Y-som: "+str(y_som_1)+" dt Y-som: "+str(dt_y_som_1)+" Closest_center: "+str(rec_closest_1))
+                            print(th_1)
+
+                        
+
+                if pause_pressed == True:    
+                    if n_clusters_0>1:
+                        for feat in range(n_clusters_0):
+                            axs[feat].imshow(weights_0[:,:,feat])
+                            plt.draw()
+                    elif n_clusters_0==1:
+                        axs.imshow(weights_0[:,:,feat])
+                        plt.draw()
+                    plt.pause(5)
+                    pause_pressed=False
+                    
+                      
+            th_0 = np.zeros(n_clusters_0)+10
+            th_1 = np.zeros(n_clusters_1)+10                        
+                    
+                        
+
+    listener.join()
+    
+fb_selected_weights_0 = weights_0
+fb_selected_weights_1 = weights_1
+
 
 
 #%% Plot feedback centroids layer 0

@@ -7,7 +7,7 @@
 __kernel void class_S(__global int *ts, __global int *tau_b,
                           __global int *n_clusters_b, __global int *ev_i_b,
                           __global int *n_events_b, __global int *tcontext,
-                          __global int *ts_mask, __global float *partial_sum, 
+                          __global int *ts_mask, __global double *partial_sum, 
                           __global int *closest, __global int *batch_labels,
                           __global float *S, __global float *dS,
                           __global int *bevskip)
@@ -66,16 +66,16 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
                     if (tmp_ts_value>0 && tmp_ts_value<=1){//floatcheck for overflowing
                         ts_value=tmp_ts_value;
 
-                        if (cl_index==loc_idx){
+                        if (batch_labels[i_file]==loc_idx){
                             loc_idx = idx2d(i_file, (int) get_global_size(0),
                                            (int) get_local_id(1),
                                            (int) get_local_size(1)); 
-                            partial_sum[loc_idx] = partial_sum[loc_idx] + ts_value;}
+                            partial_sum[loc_idx] = partial_sum[loc_idx] + (double)ts_value;}
                         else{
                             loc_idx = idx2d(i_file, (int) get_global_size(0), 
                                             (int) get_local_id(1),
                                             (int) get_local_size(1)); 
-                            partial_sum[loc_idx] = partial_sum[loc_idx] - ts_value/(n_clusters-1);}
+                            partial_sum[loc_idx] = partial_sum[loc_idx] - (double)ts_value/(n_clusters-1);}
                     }                 
                 }  
             }
@@ -84,17 +84,19 @@ __kernel void class_S(__global int *ts, __global int *tau_b,
 
         }
             
-               
+        barrier(CLK_GLOBAL_MEM_FENCE);
+
         //REDUCTION ALGORITHM HERE    
         loc_idx = idx2d(i_file, (int) get_global_size(0), (int) get_local_id(1),
                        (int) get_local_size(1)); 
-        tmp_S = work_group_reduce_add(partial_sum[loc_idx]);
+        tmp_S = (float)work_group_reduce_add(partial_sum[loc_idx]);
         partial_sum[loc_idx]=0; //reset for the next cluster
-        
+        barrier(CLK_GLOBAL_MEM_FENCE);
+
         if (get_local_id(1)==0){
         
-            if (cl_index!=batch_labels[i_file]){
-            tmp_S = -tmp_S;}
+//             if (cl_index!=batch_labels[i_file]){
+//             tmp_S = -tmp_S;}
         
             
             if(ev_i==0){

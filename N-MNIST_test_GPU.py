@@ -74,33 +74,35 @@ queue = cl.CommandQueue(ctx)
 #%% GPU - Train
 
 # Parameters
-batch_size = 256
+batch_size = 32
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
 
 #Conv Layer 1 data and parameters
-surf_x_0 = 19
-surf_y_0 = 19
+surf_x_0 = 11
+surf_y_0 = 11
 n_pol_0 = 1
-tau_0 = 1e5
+tau_0 = 1e4
 suf_div_x_0 = surf_x_0//2
 suf_div_y_0 = surf_y_0//2
-n_clusters_0 = 8
+n_clusters_0 = 64
 # n_clusters_0 = 1
-lrate_0 = 1e-4
-lrate_th_0 = 1e-4
-th_decay_0=0.20
+lrate_0 = 1e-3
+lrate_th_0 = 1e-5
+th_decay_0=0.60
+th_0_size=120
 
-
-weights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
+weights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float64)
 weights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)#*1e-11#TODO remember these ones might create some problems
 
-dweights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
+dweights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float64)
 dweights_0[:] = np.random.rand(n_clusters_0, surf_x_0, surf_y_0, n_pol_0)#*1e-11
 time_context_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
 mask_0 = np.zeros([batch_size, res_x+surf_x_0-1, res_y+surf_y_0-1, n_pol_0],dtype=np.int32)#+zeropad
-th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)+180
+th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float64)+th_0_size
+th_update_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float32)
+
 closest_0 = np.zeros([batch_size],dtype=np.int32)
 lrate_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_0)) 
 lrate_th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_th_0)) 
@@ -121,14 +123,15 @@ for rel_x in np.arange(-surf_x_0//2,surf_x_0//2)+1:
 
 
 #Dense Layer 2 data and parameters Classifier
-tau_1 = 1e5
+tau_1 = 1e4 #1e3 actually gave some nice features
+tau_1_fb = 1e1
 n_clusters_1=10
-lrate_1 = 5e-6
+lrate_1 = 1e-7
 
-weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
+weights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float64) #classifier
 weights_1[:] = np.random.rand(n_labels, res_x, res_y, n_clusters_0)#TODO remember these ones might create some problems
 
-dweights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
+dweights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float64) #classifier
 time_context_1 = np.zeros([batch_size, res_x, res_y, n_clusters_0],dtype=np.int32)
 mask_1 = np.zeros([batch_size, res_x, res_y, n_clusters_0],dtype=np.int32)
 time_context_fb_1 = np.zeros([batch_size, n_labels], dtype=np.int32)
@@ -159,8 +162,10 @@ n_pol_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_
 n_clusters_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_0))
 closest_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_0)
 lkt_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=lkt_0)
-p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_0, dtype=np.float32))
+p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_0, dtype=np.float64))
 th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_0) 
+th_update_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_update_0) 
+
 lrate_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_1)) 
 
 #Layer 2 Class
@@ -172,10 +177,12 @@ local_space_1=np.array([1, loc_size])
 
 weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
 tau_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_1))
+tau_1_fb_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_1_fb))
 n_clusters_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_1))
 closest_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_1)
-p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_1, dtype=np.float32))
-p_sum_fb_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(np.array([batch_size, n_labels]), dtype=np.float32))
+p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_1, dtype=np.float64))
+p_sum_fb_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(np.array([batch_size, n_labels]), dtype=np.float64))
+
 
 
 
@@ -204,8 +211,12 @@ program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options
 
 #%%TRAIN SET
 rec = 0
-n_batches = 80
+epoch_i=0
+n_batches = 60000//batch_size
+# n_batches = 1
 batch_i = 0
+
+n_epochs=10
 
 for batch_i in range(n_batches):    
     
@@ -224,29 +235,24 @@ for batch_i in range(n_batches):
     # TS_np_1 = -1*np.ones((batch_size,n_max_events,res_x,res_y, n_clusters_0),dtype=np.float32)    
     TS_np = -1*np.ones((batch_size,surf_x_0,surf_y_0, n_pol_0),dtype=np.float32)
     TS_np_1 = -1*np.ones((batch_size, res_x, res_y, n_clusters_0),dtype=np.float32)
+    dweights_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float64)
+    dweights_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float64) #classifier
+
+    
     dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_0)
     dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_1)
     
-    # weights_update_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float64)
-    # weights_update_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float64) #classifier
 
-    weights_update_0 = np.zeros([batch_size, n_clusters_0, surf_x_0, surf_y_0, n_pol_0],dtype=np.float32)
-    weights_update_1 = np.zeros([batch_size, n_labels, res_x, res_y, n_clusters_0], dtype=np.float32) #classifier
-
-
-    weights_update_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_update_0)
-    weights_update_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_update_1)
-
-    distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float32)    
-    distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float32)
+    distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float64)    
+    distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float64)
     processed_ev = np.zeros([batch_size],dtype=np.int32)
     correct_ev = np.zeros([batch_size],dtype=np.int32)
     train_batch_labels = np.zeros([batch_size],dtype=np.int32)
     n_events_batch = np.zeros([batch_size],dtype=np.int32)
-    # S1 = np.zeros([batch_size],dtype=np.float32)
-    # dS1 = np.zeros([batch_size],dtype=np.float32)
-    S1 = np.ones([batch_size],dtype=np.float32)
-    dS1 = np.ones([batch_size],dtype=np.float32)
+    S1 = np.zeros([batch_size],dtype=np.float32)
+    dS1 = np.zeros([batch_size],dtype=np.float32)
+    # S1 = np.ones([batch_size],dtype=np.float32)
+    # dS1 = np.ones([batch_size],dtype=np.float32)
 
     
     for i in range(batch_size):
@@ -260,7 +266,6 @@ for batch_i in range(n_batches):
         n_events_batch[i] = n_events
         
     rec+=batch_size 
-    batch_size=len(train_labels[rec:rec+batch_size])
         
     time_context_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_0)
     mask_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_0)
@@ -270,9 +275,9 @@ for batch_i in range(n_batches):
     time_context_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_fb_1)
     mask_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_fb_1) 
 
-    xs_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=xs_np)
-    ys_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ys_np)
-    ps_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ps_np)
+    xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
+    ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
+    ps_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ps_np)
     ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
     n_max_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
     TS_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=TS_np)
@@ -305,19 +310,19 @@ for batch_i in range(n_batches):
                              weights_0_bf, th_0_bf, p_sum_0_bf, distances_0_bf,
                              closest_0_bf, TS_bf, dweights_0_bf, fevskip_bf)
         
-        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf,
+        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf, ps_bf,
                               ts_bf, res_x_bf, res_y_bf, tau_1_bf, n_clusters_0_bf,
                               n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
                               time_context_1_bf, mask_1_bf, weights_1_bf, 
                               p_sum_1_bf, distances_1_bf, closest_1_bf,
-                              closest_0_bf, TS_bf_1, dweights_1_bf, fevskip_bf,
+                              TS_bf_1, dweights_1_bf, fevskip_bf,
                               bevskip_bf, processed_ev_bf, correct_ev_bf, 
                               train_batch_labels_bf)
         
         global_space = np.array([batch_size, n_labels])
         local_space = np.array([1, n_labels])
         
-        kernel=program.class_S(queue, global_space, local_space, ts_bf, tau_1_bf,
+        kernel=program.class_S(queue, global_space, local_space, ts_bf, tau_1_fb_bf,
                                   n_clusters_1_bf, event_idx_bf, n_max_events_bf,
                                   time_context_fb_1_bf, mask_fb_1_bf, p_sum_fb_1_bf,
                                   closest_1_bf, train_batch_labels_bf, S1_bf,
@@ -326,22 +331,22 @@ for batch_i in range(n_batches):
         kernel=program.class_w_update(queue, global_space_1, local_space_1, 
                                       ts_bf, res_x_bf, res_y_bf, n_clusters_0_bf,
                                       n_clusters_1_bf, event_idx_bf, n_max_events_bf,
-                                      weights_update_1_bf, train_batch_labels_bf,                          
+                                      weights_1_bf, train_batch_labels_bf,                          
                                       lrate_1_bf, dweights_1_bf, bevskip_bf)
         
         kernel=program.conv_w_update(queue, global_space_0, local_space_0, 
                                       ts_bf, surf_x_0_bf, surf_y_0_bf, n_pol_0_bf,
                                       n_clusters_0_bf, event_idx_bf, n_max_events_bf,
-                                      weights_update_0_bf, closest_0_bf,                     
+                                      weights_0_bf, closest_0_bf,                     
                                       lrate_0_bf, S1_bf, dS1_bf, dweights_0_bf, bevskip_bf)
  
         global_space = np.array([batch_size, n_clusters_0])
         local_space = np.array([1, n_clusters_0])
 
-        # kernel=program.conv_th_update(queue, global_space, local_space,
-        #                               ts_bf, n_clusters_0_bf, event_idx_bf, n_max_events_bf,
-        #                               lrate_th_0_bf, closest_0_bf, S1_bf, dS1_bf,                    
-        #                               distances_0_bf, th_0_bf, th_decay_0_bf, bevskip_bf)
+        kernel=program.conv_th_update(queue, global_space, local_space,
+                                      ts_bf, n_clusters_0_bf, event_idx_bf, n_max_events_bf,
+                                      lrate_th_0_bf, closest_0_bf, S1_bf, dS1_bf,                    
+                                      distances_0_bf, th_0_bf, th_decay_0_bf, bevskip_bf)
         
         kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
 
@@ -353,15 +358,16 @@ for batch_i in range(n_batches):
         
         # cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
         # cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
+        # cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
+
 
 
         # # distances_tmp =  np.sum(np.abs(TS_np_1[0,None]-weights_1[0]),axis=(1,2,3))
-        # distances_tmp =  np.sum((TS_np_1[0,None]-weights_1[0])**2,axis=(1,2,3))
         # distances_tmp_prec = np.asarray((TS_np_1[0,None]-weights_1[0])**2,dtype=np.float64)
         # distances_tmp_prec = np.sum(distances_tmp_prec,axis=(1,2,3))
-        # np_closest = np.argmin(distances_tmp)
+        # np_closest = np.argmin(distances_tmp_prec)
         
-        # error=np.sum(np.abs(distances_tmp-distances_1[0]))
+        # error=np.sum(np.abs(distances_tmp_prec-distances_1[0]))
 
 
 
@@ -372,24 +378,32 @@ for batch_i in range(n_batches):
         # print("closest 1 : "+str(np_closest)+" dist error : "+str(error))
         # print("closest 0 : "+str(closest_0[0]))
         
-    # if batch_i == n_batches-1:
-    #     batch_i=0
-    # else:
-    #     batch_i+=1
+    if (batch_i < n_batches):
+        batch_i+=1
+    elif (epoch_i < n_epochs):
+        batch_i=0
+        epoch_i+=1
 
 
 
-    cl.enqueue_copy(queue, weights_update_0, weights_update_0_bf).wait()
-    cl.enqueue_copy(queue, weights_update_1, weights_update_1_bf).wait()
-
+    # cl.enqueue_copy(queue, weights_update_0, weights_update_0_bf).wait()
+    # cl.enqueue_copy(queue, weights_update_1, weights_update_1_bf).wait()
+    # cl.enqueue_copy(queue, th_update_0, th_update_0_bf).wait()
 
     
+    cl.enqueue_copy(queue, processed_ev, processed_ev_bf).wait()
+    cl.enqueue_copy(queue, correct_ev, correct_ev_bf).wait()
+    
+    # weights_update_1 = weights_update_1/processed_ev[:,None,None,None,None]
+    # weights_update_0 = weights_update_0/processed_ev[:,None,None,None,None]
+    # th_update_0 = th_update_0/processed_ev[:,None]
+    
     cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
-    weights_1[:] += np.sum(weights_update_1, axis=0)
+    weights_1[:] = np.mean(weights_1, axis=0)
     weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1) #TODO check if there is a more efficient way than doing this
 
     cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
-    weights_0[:] += np.sum(weights_update_0, axis=0)
+    weights_0[:] = np.mean(weights_0, axis=0)
     weights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
     # plt.imshow(weights_1[4,0,:,:,0])
     
@@ -399,6 +413,120 @@ for batch_i in range(n_batches):
 
     
 
+
+    
+    avg_processed_ev = np.mean(processed_ev / n_events_batch)
+    avg_accuracy = np.mean(correct_ev / processed_ev)
+
+    end_exec = time.time()
+    
+    print("TRAIN")
+    print("Batch: "+str(batch_i)+" of "+str(n_batches))
+    print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
+    print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
+    print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
+    
+    
+    n_events_rec=np.zeros(batch_size, dtype=int)
+    for i in range(batch_size):
+        data_events = test_set_orig[test_labels[i]][test_rec_idx[i]]
+        n_events_rec[i] = len(data_events[0])
+        
+    n_max_events = max(n_events_rec)
+
+    xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    # TS_np = -1*np.ones((batch_size,n_max_events,surf_x_0,surf_y_0, n_pol_0),dtype=np.float32)
+    # TS_np_1 = -1*np.ones((batch_size,n_max_events,res_x,res_y, n_clusters_0),dtype=np.float32)    
+    TS_np = -1*np.ones((batch_size,surf_x_0,surf_y_0, n_pol_0),dtype=np.float32)
+    TS_np_1 = -1*np.ones((batch_size,res_x,res_y, n_clusters_0),dtype=np.float32)
+    dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_0)
+    dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_1)
+
+    distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float64)    
+    distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float64)
+    processed_ev = np.zeros([batch_size],dtype=np.int32)
+    correct_ev = np.zeros([batch_size],dtype=np.int32)
+    test_batch_labels = np.zeros([batch_size],dtype=np.int32)
+    n_events_batch = np.zeros([batch_size],dtype=np.int32)
+    S1 = np.zeros([batch_size],dtype=np.int32)
+    dS1 = np.zeros([batch_size],dtype=np.int32)
+
+    
+    for i in range(batch_size):
+        data_events = test_set_orig[test_labels[i]][test_rec_idx[i]]
+        n_events = len(data_events[0])
+        xs_np[i,:n_events] = data_events[0]
+        ys_np[i,:n_events] = data_events[1]
+        ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
+        ts_np[i,:n_events] = data_events[3]
+        test_batch_labels[i] = test_labels[i]
+        n_events_batch[i] = n_events
+        
+        
+    time_context_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_0)
+    mask_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_0)
+
+    time_context_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_1)
+    mask_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_1)    
+    time_context_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_fb_1)
+    mask_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_fb_1) 
+
+    xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
+    ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
+    ps_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ps_np)
+    ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
+    n_max_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
+    TS_bf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np)
+    TS_bf_1 = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np_1)
+
+    event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+    distances_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_0)
+    distances_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_1)
+    
+    processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
+    correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+    test_batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=test_batch_labels)
+    S1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=S1)
+    dS1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dS1)
+ 
+    # fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
+    fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
+    bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
+        
+    start_exec = time.time()
+    for ev_i in range(n_max_events):
+        
+        # event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(ev_i))
+
+        kernel=program.conv_infer(queue, global_space_0, local_space_0, lkt_0_bf, xs_bf, ys_bf, ps_bf,
+                             ts_bf, res_x_bf, res_y_bf, surf_x_0_bf, surf_y_0_bf,
+                             tau_0_bf, n_pol_0_bf, n_clusters_0_bf, event_idx_bf,
+                             n_max_events_bf, time_context_0_bf, mask_0_bf,
+                             weights_0_bf, th_0_bf, p_sum_0_bf, distances_0_bf,
+                             closest_0_bf, TS_bf, dweights_0_bf, fevskip_bf)
+        
+        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf, ps_bf,
+                              ts_bf, res_x_bf, res_y_bf, tau_1_bf, n_clusters_0_bf,
+                              n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
+                              time_context_1_bf, mask_1_bf, weights_1_bf, 
+                              p_sum_1_bf, distances_1_bf, closest_1_bf,
+                              TS_bf_1, dweights_1_bf, fevskip_bf,
+                              bevskip_bf, processed_ev_bf, correct_ev_bf, 
+                              test_batch_labels_bf)
+        
+        global_space = np.array([batch_size, n_labels])
+        local_space = np.array([1, n_labels])
+                                          
+        
+        kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
+        
+
+        # print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
+        
+
     cl.enqueue_copy(queue, processed_ev, processed_ev_bf).wait()
     cl.enqueue_copy(queue, correct_ev, correct_ev_bf).wait()
     
@@ -407,75 +535,11 @@ for batch_i in range(n_batches):
 
     end_exec = time.time()
     
-    print("Batch: "+str(batch_i)+" of "+str(n_batches))
-    print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
+    print("EVAL")
     print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
     print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
-#%% Plot
-
-cl.enqueue_copy(queue, dweights_0, dweights_0_bf).wait()
-cl.enqueue_copy(queue, dweights_1, dweights_1_bf).wait()
-
-cl.enqueue_copy(queue, bevskip, bevskip_bf).wait()
-cl.enqueue_copy(queue, fevskip, fevskip_bf).wait()
-
-
-cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
-cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
-
-# p_sum_1 = np.zeros(global_space_1, dtype=np.float32)
-# cl.enqueue_copy(queue, p_sum_1, p_sum_1_bf).wait()
-
-
-
-# # #TODO cluster 0 seems to be learning real weird stuff
-for i in range(n_clusters_0):
-    plt.figure()
-    plt.title("cluster: "+str(i))
-    plt.imshow(weights_0[0,i,:,:,0].transpose())
     
-
-#TODO something's wrong with this thing here!!! weight updates seem really wrong !!!
-# for i in range(n_clusters_0):
-#     plt.figure()
-#     plt.title("cluster: "+str(i))
-#     plt.imshow(np.sum(weights_update_0[:,i,:,:,0], axis=0).transpose())
     
-# for i in range(n_clusters_1):
-#     plt.figure()
-#     plt.title("cluster: "+str(i))
-#     plt.imshow(weights_1[0,i,:,:,1].transpose())
-
-# for i in range(n_clusters_1):
-#     plt.figure()
-#     plt.title("cluster: "+str(i))
-#     plt.imshow(np.sum(weights_update_1[:,i,:,:,3], axis=0).transpose())
-
-# cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
-# time_context_0 =time_context_0[:,:,:,0]
-
-cl.enqueue_copy(queue, TS_np, TS_bf).wait()
-# cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
-
-# plt.imshow(TS_np[220])
-# for i in range(10):
-#     plt.figure()
-#     plt.imshow(TS_np[i,:,:,0].transpose())
-
-
-
-# cl.enqueue_copy(queue, TS_np, TS_bf).wait()
-# cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
-
-# distances_tmp =  np.sum(np.abs(TS_np[0,:,None,:,:,0]-weights_0[0,None,:,:,:,0]),axis=(2,3))
-# np.sum(distances_tmp-distances_0[0])
-
-# cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
-
-# distances_tmp =  np.sum(np.abs(TS_np_1[0,:,None,:,:,:]-weights_1[0,None,:,:,:,:]),axis=(2,3,4))
-# np.sum(distances_tmp-distances_1[0])
-
-# plt.imshow(weights_1[0,0,:,:,0])
 
 #%%#TEST SET
 rec = 0
@@ -565,12 +629,12 @@ for batch_i in range(n_batches):
                              weights_0_bf, th_0_bf, p_sum_0_bf, distances_0_bf,
                              closest_0_bf, TS_bf, dweights_0_bf, fevskip_bf)
         
-        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf,
+        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf, ps_bf,
                               ts_bf, res_x_bf, res_y_bf, tau_1_bf, n_clusters_0_bf,
                               n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
                               time_context_1_bf, mask_1_bf, weights_1_bf, 
                               p_sum_1_bf, distances_1_bf, closest_1_bf,
-                              closest_0_bf, TS_bf_1, dweights_1_bf, fevskip_bf,
+                              TS_bf_1, dweights_1_bf, fevskip_bf,
                               bevskip_bf, processed_ev_bf, correct_ev_bf, 
                               test_batch_labels_bf)
         
@@ -611,6 +675,685 @@ for batch_i in range(n_batches):
 
 # distances_tmp =  np.sum(np.abs(TS_np_1[0,:,None,:,:,:]-weights_1[0,None,:,:,:,:]),axis=(2,3,4))
 # np.sum(distances_tmp-distances_1[0])
+
+#%% Plot
+
+cl.enqueue_copy(queue, dweights_0, dweights_0_bf).wait()
+cl.enqueue_copy(queue, dweights_1, dweights_1_bf).wait()
+
+cl.enqueue_copy(queue, bevskip, bevskip_bf).wait()
+cl.enqueue_copy(queue, fevskip, fevskip_bf).wait()
+
+
+cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
+cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
+
+p_sum_1 = np.zeros(global_space_1, dtype=np.float32)
+cl.enqueue_copy(queue, p_sum_1, p_sum_1_bf).wait()
+
+
+
+# # TODO cluster 0 seems to be learning real weird stuff
+for i in range(n_clusters_0):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(weights_0[0,i,:,:,0].transpose())
+    
+
+#TODO something's wrong with this thing here!!! weight updates seem really wrong !!!
+# for i in range(n_clusters_0):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(dweights_0[0,i,:,:,0].transpose())
+    
+# for i in range(n_clusters_1):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(weights_1[0,i,:,:,0].transpose())
+# plt.ylabel("Layer0 cluster#")    
+
+
+
+# for i in range(n_clusters_1):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(dweights_1[0,i,0,0,0].transpose())
+
+# cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
+# time_context_0 =time_context_0[:,:,:,0]
+
+cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
+
+# plt.imshow(TS_np[220])
+# for i in range(10):
+#     plt.figure()
+#     plt.imshow(TS_np[i,:,:,0].transpose())
+
+
+for i in range(10):
+    plt.figure()
+    plt.imshow(TS_np_1[i,:,:,0].transpose())
+
+
+
+# cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+# cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
+
+# distances_tmp =  np.sum(np.abs(TS_np[0,:,None,:,:,0]-weights_0[0,None,:,:,:,0]),axis=(2,3))
+# np.sum(distances_tmp-distances_0[0])
+
+# cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
+
+# distances_tmp =  np.sum(np.abs(TS_np_1[0,:,None,:,:,:]-weights_1[0,None,:,:,:,:]),axis=(2,3,4))
+# np.sum(distances_tmp-distances_1[0])
+
+# plt.imshow(weights_1[0,0,:,:,0])
+
+#%% GPU - Train DENSE
+
+# Parameters
+batch_size = 512
+n_labels = 10
+n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
+
+
+#Conv Layer 1 data and parameters
+n_pol_0 = 1
+tau_0 = 1e5
+n_clusters_0 = 16
+# n_clusters_0 = 1
+lrate_0 = 2e-1
+lrate_th_0 = 1e-2
+th_decay_0=0.60
+th_0_size=750
+res_x_0 = 28
+res_y_0 = 28
+
+
+weights_0 = np.zeros([batch_size, n_clusters_0, res_x_0, res_y_0, n_pol_0],dtype=np.float64)
+weights_0[:] = np.random.rand(n_clusters_0, res_x_0, res_y_0, n_pol_0)#TODO remember these ones might create some problems
+
+dweights_0 = np.zeros([batch_size, n_clusters_0, res_x_0, res_y_0, n_pol_0],dtype=np.float64)
+# dweights_0[:] = np.random.rand(n_clusters_0, res_x_0, res_y_0, n_pol_0)#*1e-11
+time_context_0 = np.zeros([batch_size, res_x_0, res_y_0, n_pol_0],dtype=np.int32)#+zeropad
+mask_0 = np.zeros([batch_size, res_x_0, res_y_0, n_pol_0],dtype=np.int32)#+zeropad
+th_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float64)+th_0_size
+th_update_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float64)
+
+
+closest_0 = np.zeros([batch_size],dtype=np.int32)
+lrate_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_0)) 
+lrate_th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_th_0)) 
+th_decay_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(th_decay_0)) 
+
+
+tau_1 = 1e3#1e3 actually gave some nice features
+tau_1_fb = 1e2
+n_clusters_1=10
+lrate_1 = 5e-5
+res_x_1 = 1
+res_y_1 = 1
+
+
+weights_1 = np.zeros([batch_size, n_labels, res_x_1, res_y_1, n_clusters_0], dtype=np.float64) #classifier
+weights_1[:] = np.random.rand(n_labels, res_x_1, res_y_1, n_clusters_0)#TODO remember these ones might create some problems
+
+dweights_1 = np.zeros([batch_size, n_labels, res_x_1, res_y_1, n_clusters_0], dtype=np.float64) #classifier
+time_context_1 = np.zeros([batch_size, res_x_1, res_y_1, n_clusters_0],dtype=np.int32)
+mask_1 = np.zeros([batch_size, res_x_1, res_y_1, n_clusters_0],dtype=np.int32)
+time_context_fb_1 = np.zeros([batch_size, n_labels], dtype=np.int32)
+mask_fb_1 = np.zeros([batch_size, n_labels], dtype=np.int32)
+closest_1 = np.zeros([batch_size],dtype=np.int32)
+
+#Data Buffers allocation
+
+#Layer 1 Conv
+#TODO find a way to get the optimal loc_size automatically via opencl
+# loc_size = 64;
+loc_size = res_x_0*res_y_0*n_pol_0;
+
+global_space_0=np.array([batch_size,loc_size])
+local_space_0=np.array([1,loc_size])
+
+weights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
+res_x_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_x_0))
+res_y_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_y_0))
+tau_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_0))
+n_pol_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_pol_0))
+n_clusters_0_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_0))
+closest_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_0)
+p_sum_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_0, dtype=np.float64))
+th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_0) 
+th_update_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_update_0) 
+
+lrate_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate_1)) 
+
+#Layer 2 Class
+# loc_size = 1024;
+loc_size = res_x_1*res_y_1*n_clusters_0
+
+global_space_1=np.array([batch_size, loc_size])#Max local size
+local_space_1=np.array([1, loc_size])
+
+weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1)
+res_x_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_x_1))
+res_y_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_y_1))
+tau_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_1))
+tau_1_fb_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(tau_1_fb))
+n_clusters_1_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters_1))
+closest_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_1)
+p_sum_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(global_space_1, dtype=np.float64))
+p_sum_fb_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.zeros(np.array([batch_size, n_labels]), dtype=np.float64))
+
+
+
+
+# fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
+fevskip = np.zeros(batch_size, dtype=np.int32)
+bevskip = np.zeros(batch_size, dtype=np.int32)
+
+
+
+f = open('Libs/cl_kernels/dense_infer.cl', 'r')
+fstr1 = "".join(f.readlines())
+f = open('Libs/cl_kernels/class_infer.cl', 'r')
+fstr2 = "".join(f.readlines())
+f = open('Libs/cl_kernels/next_ev.cl', 'r')
+fstr3 = "".join(f.readlines())
+f = open('Libs/cl_kernels/class_S.cl', 'r')
+fstr4 = "".join(f.readlines())
+f = open('Libs/cl_kernels/class_w_update.cl', 'r')
+fstr5 = "".join(f.readlines())
+f = open('Libs/cl_kernels/dense_w_update.cl', 'r')
+fstr6 = "".join(f.readlines())
+f = open('Libs/cl_kernels/conv_th_update.cl', 'r')
+fstr7 = "".join(f.readlines())
+# print(fstr)
+program=cl.Program(ctx, fstr1+fstr2+fstr3+fstr4+fstr5+fstr6+fstr7).build(options='-cl-std=CL2.0')
+
+new_weights_1 = weights_1.copy()
+new_weights_0 = weights_0.copy()
+total_s = np.zeros([batch_size,n_clusters_0])
+total_ds = np.zeros([batch_size,n_clusters_0])
+
+
+#%%TRAIN SE
+rec = 0
+epoch_i=0
+n_batches = 60000//batch_size
+# n_batches = 1
+batch_i = 0
+ev_i = 0
+
+n_epochs=10
+
+for batch_i in range(n_batches):    
+    
+    n_events_rec=np.zeros(batch_size, dtype=int)
+    for i in range(batch_size):
+        data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
+        n_events_rec[i] = len(data_events[0])
+        
+    n_max_events = max(n_events_rec)
+
+    xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    
+    dweights_0 = np.zeros([batch_size, n_clusters_0, res_x_0, res_y_0, n_pol_0],dtype=np.float64)
+    dweights_1 = np.zeros([batch_size, n_labels, res_x_1, res_y_1, n_clusters_0], dtype=np.float64) #classifier
+    
+    TS_np = -1*np.ones((batch_size,res_x_0, res_y_0, n_pol_0),dtype=np.float32)
+    TS_np_1 = -1*np.ones((batch_size, res_x_1, res_y_1, n_clusters_0),dtype=np.float32)
+    dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_0)
+    dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_1)
+    
+
+
+    # weights_update_0 = np.zeros([batch_size, n_clusters_0, res_x_0, res_y_0, n_pol_0],dtype=np.float64)
+    # weights_update_1 = np.zeros([batch_size, n_labels, res_x_1, res_y_1, n_clusters_0], dtype=np.float64) #classifier
+    # th_update_0 = np.zeros([batch_size,n_clusters_0], dtype=np.float64)
+
+    
+
+    # weights_update_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_update_0)
+    # weights_update_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_update_1)
+    # th_update_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_update_0)
+    
+    th_decay_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.float32(th_decay_0)) 
+
+    distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float64)    
+    distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float64)
+    processed_ev = np.zeros([batch_size],dtype=np.int32)
+    correct_ev = np.zeros([batch_size],dtype=np.int32)
+    train_batch_labels = np.zeros([batch_size],dtype=np.int32)
+    n_events_batch = np.zeros([batch_size],dtype=np.int32)
+    S1 = np.zeros([batch_size],dtype=np.float32)
+    dS1 = np.zeros([batch_size],dtype=np.float32)
+    # S1 = np.ones([batch_size],dtype=np.float32)
+    # dS1 = np.ones([batch_size],dtype=np.float32)
+
+    
+    for i in range(batch_size):
+        data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
+        n_events = len(data_events[0])
+        xs_np[i,:n_events] = data_events[0]
+        ys_np[i,:n_events] = data_events[1]
+        ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
+        ts_np[i,:n_events] = data_events[3]
+        train_batch_labels[i] = train_labels[rec+i]
+        n_events_batch[i] = n_events
+        
+    rec+=batch_size 
+        
+    time_context_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_0)
+    mask_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_0)
+
+    time_context_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_1)
+    mask_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_1)    
+    time_context_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_fb_1)
+    mask_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_fb_1) 
+
+    xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
+    ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
+    ps_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ps_np)
+    ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
+    n_max_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
+    TS_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=TS_np)
+    TS_bf_1 = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=TS_np_1)
+
+    event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+    distances_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_0)
+    distances_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_1)
+    
+    processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
+    correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+    train_batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=train_batch_labels)
+    S1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=S1)
+    dS1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dS1)
+    
+    # fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
+    fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)#TODO Check why cluster1 does not change (it seems to be stuck to the first learnt label in the first batch)
+    bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)# NB IT DOES not depend on wether layer 0 learns or not, only on the number of units in the layer 0 (if it is 0 it does not matter)
+                                                                                  # It might be caused by the low precision in in the partail sum      
+
+    start_exec = time.time()
+    for ev_i in range(n_max_events):
+        
+        # event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(ev_i))
+
+        kernel=program.dense_infer(queue, global_space_0, local_space_0, xs_bf, ys_bf, ps_bf,
+                             ts_bf, res_x_0_bf, res_y_0_bf, tau_0_bf, n_pol_0_bf, n_clusters_0_bf, event_idx_bf,
+                             n_max_events_bf, time_context_0_bf, mask_0_bf,
+                             weights_0_bf, th_0_bf, p_sum_0_bf, distances_0_bf,
+                             closest_0_bf, TS_bf, dweights_0_bf, fevskip_bf)
+        
+        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf, ps_bf,
+                              ts_bf, res_x_1_bf, res_y_1_bf, tau_1_bf, n_clusters_0_bf,
+                              n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
+                              time_context_1_bf, mask_1_bf, weights_1_bf, 
+                              p_sum_1_bf, distances_1_bf, closest_1_bf,
+                              TS_bf_1, dweights_1_bf, fevskip_bf,
+                              bevskip_bf, processed_ev_bf, correct_ev_bf, 
+                              train_batch_labels_bf)
+        
+        global_space = np.array([batch_size, n_labels])
+        local_space = np.array([1, n_labels])
+        
+
+        
+        kernel=program.class_S(queue, global_space, local_space, ts_bf, tau_1_fb_bf,
+                                  n_clusters_1_bf, event_idx_bf, n_max_events_bf,
+                                  time_context_fb_1_bf, mask_fb_1_bf, p_sum_fb_1_bf,
+                                  closest_1_bf, train_batch_labels_bf, S1_bf,
+                                  dS1_bf, bevskip_bf)
+#################DEBUG
+        # cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
+        # cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
+
+        # cl.enqueue_copy(queue, dweights_0, dweights_0_bf).wait()
+        # cl.enqueue_copy(queue, dweights_1, dweights_1_bf).wait()
+        # cl.enqueue_copy(queue, closest_0, closest_0_bf).wait()
+        # cl.enqueue_copy(queue, S1, S1_bf).wait()
+        # cl.enqueue_copy(queue, dS1, dS1_bf).wait()
+        
+        # for f in range(batch_size):
+        #     total_s[f, closest_0[f]] += S1[f]*0.01
+            
+        # for f in range(batch_size):
+        #     total_ds[f, closest_0[f]] += dS1[f]
+
+        # new_weights_0[:,closest_0[0]]  = weights_0[:,closest_0[0]]  + lrate_0*dS1[0]*dweights_0[:,closest_0[0]] 
+        
+        # new_weights_1[:,train_batch_labels[0]] = weights_1[:,train_batch_labels[0]] + lrate_1*dweights_1[:,train_batch_labels[0]]
+
+        
+#################DEBUG
+        
+        # cl.enqueue_copy(queue, S1, S1_bf).wait()
+        # cl.enqueue_copy(queue, dS1, dS1_bf).wait()
+        # cl.enqueue_copy(queue, closest_0, closest_0_bf).wait()
+        # cl.enqueue_copy(queue, closest_1, closest_1_bf).wait()
+        # cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
+        # cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
+    
+        # cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
+        # cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+    
+        # cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
+        # cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
+    
+    
+    
+        # dbg_i = 0
+        # # distances_tmp_prec = (np.asarray(TS_np_1[dbg_i,None],dtype=np.float64)-np.asarray(weights_1[dbg_i],dtype=np.float64))**2
+        # distances_tmp_prec = (TS_np_1[dbg_i,None] - weights_1[dbg_i])*(TS_np_1[dbg_i,None] - weights_1[dbg_i])
+        # distances_tmp_prec = np.sum(distances_tmp_prec,axis=(1,2,3))
+        # np_closest = np.argmin(distances_tmp_prec)
+        
+        # error=np.sum(np.abs(distances_tmp_prec-distances_1[dbg_i]))
+    
+        
+        # # distances_tmp_prec = (np.asarray(TS_np[dbg_i,None],dtype=np.float64)-np.asarray(weights_0[dbg_i],dtype=np.float64))**2
+        # distances_tmp_prec = (TS_np[dbg_i,None]-weights_0[dbg_i])*(TS_np[dbg_i,None]-weights_0[dbg_i])
+
+        # distances_tmp_prec = np.sum(distances_tmp_prec,axis=(1,2,3))
+        # np_closest_0 = np.argmin(distances_tmp_prec)
+        
+        # error_0=np.sum(np.abs(distances_tmp_prec-distances_0[dbg_i]))
+    
+    
+    
+    
+    
+        # print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
+        # print("S file 1: "+str(S1[dbg_i])+" dS file 1: "+str(dS1[dbg_i]))
+        # print("closest 1 : "+str(closest_1[dbg_i])+" label : "+str(train_batch_labels[dbg_i]))
+        # print("closest 1 : "+str(np_closest)+" dist error : "+str(error))
+        # print("closest 0 : "+str(closest_0[dbg_i]))
+        # print("closest 0 : "+str(np_closest_0)+" dist error : "+str(error_0))
+    
+        # # print("weights 1 error : "+str(np.sum(np.abs(new_weights_1[:,train_batch_labels[0]]-weights_1[:,train_batch_labels[0]]))))
+        # # print("weights 0 error : "+str(np.sum(np.abs(new_weights_0[:,closest_0[0]]-weights_0[:,closest_0[0]]))))
+        # # if np.sum(np.abs(new_weights_0[:,closest_0[0]]-weights_0[:,closest_0[0]]))!=0:
+        # #     raise ValueError('Large difference in GPU and CPU results')
+        # # if np.sum(np.sum(np.abs(new_weights_1[:,train_batch_labels[0]]-weights_1[:,train_batch_labels[0]])))>=1:
+        # #     raise ValueError('Large difference in GPU and CPU results')
+        # if (np_closest_0!=closest_0[dbg_i]) or (np_closest!=closest_1[dbg_i]) :
+        #     raise ValueError('Large difference in GPU and CPU results')
+        # ev_i+=1
+#################  
+
+        kernel=program.class_w_update(queue, global_space_1, local_space_1, 
+                                      ts_bf, res_x_1_bf, res_y_1_bf, n_clusters_0_bf,
+                                      n_clusters_1_bf, event_idx_bf, n_max_events_bf,
+                                      weights_1_bf, train_batch_labels_bf,                          
+                                      lrate_1_bf, dweights_1_bf, bevskip_bf)
+        
+        kernel=program.dense_w_update(queue, global_space_0, local_space_0, 
+                                      ts_bf, res_x_0_bf, res_y_0_bf, n_pol_0_bf,
+                                      n_clusters_0_bf, event_idx_bf, n_max_events_bf,
+                                      weights_0_bf, closest_0_bf,                     
+                                      lrate_0_bf, S1_bf, dS1_bf, dweights_0_bf, bevskip_bf)
+ 
+        global_space = np.array([batch_size, n_clusters_0])
+        local_space = np.array([1, n_clusters_0])
+
+        # kernel=program.conv_th_update(queue, global_space, local_space,
+        #                               ts_bf, n_clusters_0_bf, event_idx_bf, n_max_events_bf,
+        #                               lrate_th_0_bf, closest_0_bf, S1_bf, dS1_bf,                    
+        #                               distances_0_bf, th_0_bf, #th_update_0_bf, 
+        #                               th_decay_0_bf, bevskip_bf)
+        
+        kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
+        
+        
+    # plt.figure()
+    # plt.imshow(total_s.transpose())
+    # plt.title("S")
+    # plt.figure()
+    # plt.imshow(total_ds.transpose())
+    # plt.title("dS")
+    # break
+        
+    if (batch_i < n_batches):
+        batch_i+=1
+    elif (epoch_i < n_epochs):
+        batch_i=0
+        epoch_i+=1
+
+
+    # cl.enqueue_copy(queue, weights_update_0, weights_update_0_bf).wait()
+    # cl.enqueue_copy(queue, weights_update_1, weights_update_1_bf).wait()
+    # cl.enqueue_copy(queue, th_update_0, th_update_0_bf).wait()
+
+    
+    cl.enqueue_copy(queue, processed_ev, processed_ev_bf).wait()
+    cl.enqueue_copy(queue, correct_ev, correct_ev_bf).wait()
+    
+    # weights_update_1 = weights_update_1/processed_ev[:,None,None,None,None]
+    # weights_update_0 = weights_update_0/processed_ev[:,None,None,None,None]
+    # th_update_0 = th_update_0/processed_ev[:,None]
+    
+    cl.enqueue_copy(queue, weights_1, weights_1_bf).wait()
+    weights_1[:] = np.mean(weights_1, axis=0)
+    weights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_1) #TODO check if there is a more efficient way than doing this
+
+    cl.enqueue_copy(queue, weights_0, weights_0_bf).wait()
+    weights_0[:] = np.mean(weights_0, axis=0)
+    weights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=weights_0)
+    # plt.imshow(weights_1[4,0,:,:,0])
+    
+    cl.enqueue_copy(queue, th_0, th_0_bf).wait()
+    th_0[:] = np.mean(th_0, axis=0)
+    th_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=th_0)
+
+    
+
+
+    
+    avg_processed_ev = np.mean(processed_ev / n_events_batch)
+    avg_accuracy = np.mean(correct_ev / processed_ev)
+
+    end_exec = time.time()
+    
+    print("TRAIN")
+    print("Batch: "+str(batch_i)+" of "+str(n_batches))
+    print("Processed rec "+str(rec)+" of "+str(len(train_labels)))
+    print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
+    print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
+    
+    
+    n_events_rec=np.zeros(batch_size, dtype=int)
+    for i in range(batch_size):
+        data_events = test_set_orig[test_labels[i]][test_rec_idx[i]]
+        n_events_rec[i] = len(data_events[0])
+        
+    n_max_events = max(n_events_rec)
+
+    xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+ 
+    dweights_0 = np.zeros([batch_size, n_clusters_0, res_x_0, res_y_0, n_pol_0],dtype=np.float64)
+    dweights_1 = np.zeros([batch_size, n_labels, res_x_1, res_y_1, n_clusters_0], dtype=np.float64) #classifier
+    
+    TS_np = -1*np.ones((batch_size, res_x_0, res_y_0, n_pol_0),dtype=np.float32)
+    TS_np_1 = -1*np.ones((batch_size,res_x_1, res_y_1, n_clusters_0),dtype=np.float32)
+    dweights_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_0)
+    dweights_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dweights_1)
+
+    distances_0 = np.zeros([batch_size,n_clusters_0],dtype=np.float64)    
+    distances_1 = np.zeros([batch_size,n_clusters_1],dtype=np.float64)
+    processed_ev = np.zeros([batch_size],dtype=np.int32)
+    correct_ev = np.zeros([batch_size],dtype=np.int32)
+    test_batch_labels = np.zeros([batch_size],dtype=np.int32)
+    n_events_batch = np.zeros([batch_size],dtype=np.int32)
+    S1 = np.zeros([batch_size],dtype=np.int32)
+    dS1 = np.zeros([batch_size],dtype=np.int32)
+
+    
+    for i in range(batch_size):
+        data_events = test_set_orig[test_labels[i]][test_rec_idx[i]]
+        n_events = len(data_events[0])
+        xs_np[i,:n_events] = data_events[0]
+        ys_np[i,:n_events] = data_events[1]
+        ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
+        ts_np[i,:n_events] = data_events[3]
+        test_batch_labels[i] = test_labels[i]
+        n_events_batch[i] = n_events
+        
+        
+    time_context_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_0)
+    mask_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_0)
+
+    time_context_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_1)
+    mask_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_1)    
+    time_context_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_fb_1)
+    mask_fb_1_bf  = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=mask_fb_1) 
+
+    xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
+    ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
+    ps_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ps_np)
+    ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
+    n_max_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
+    TS_bf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np)
+    TS_bf_1 = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=TS_np_1)
+
+    event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+    distances_0_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_0)
+    distances_1_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances_1)
+    
+    processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
+    correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+    test_batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=test_batch_labels)
+
+ 
+    # fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
+    fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
+    bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
+        
+    start_exec = time.time()
+    for ev_i in range(n_max_events):
+        
+        # event_idx_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(ev_i))
+
+        kernel=program.dense_infer(queue, global_space_0, local_space_0, xs_bf, ys_bf, ps_bf,
+                              ts_bf, res_x_0_bf, res_y_0_bf, 
+                              tau_0_bf, n_pol_0_bf, n_clusters_0_bf, event_idx_bf,
+                              n_max_events_bf, time_context_0_bf, mask_0_bf,
+                              weights_0_bf, th_0_bf, p_sum_0_bf, distances_0_bf,
+                              closest_0_bf, TS_bf, dweights_0_bf, fevskip_bf)
+        
+        kernel=program.class_infer(queue, global_space_1, local_space_1, xs_bf, ys_bf, ps_bf,
+                              ts_bf, res_x_1_bf, res_y_1_bf, tau_1_bf, n_clusters_0_bf,
+                              n_clusters_1_bf, event_idx_bf, n_max_events_bf, 
+                              time_context_1_bf, mask_1_bf, weights_1_bf, 
+                              p_sum_1_bf, distances_1_bf, closest_1_bf,
+                              TS_bf_1, dweights_1_bf, fevskip_bf,
+                              bevskip_bf, processed_ev_bf, correct_ev_bf, 
+                              test_batch_labels_bf)
+        
+        global_space = np.array([batch_size, n_labels])
+        local_space = np.array([1, n_labels])
+                                          
+        
+        kernel=program.next_ev(queue, np.array([batch_size]), None, event_idx_bf)
+        
+
+        # print("Processed ev "+str(ev_i)+" of "+str(n_max_events))
+        
+
+    cl.enqueue_copy(queue, processed_ev, processed_ev_bf).wait()
+    cl.enqueue_copy(queue, correct_ev, correct_ev_bf).wait()
+    
+    avg_processed_ev = np.mean(processed_ev / n_events_batch)
+    avg_accuracy = np.mean(correct_ev / processed_ev)
+
+    end_exec = time.time()
+    
+    print("EVAL")
+    print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
+    print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
+    
+    
+#%% Plot
+
+cl.enqueue_copy(queue, dweights_0, dweights_0_bf).wait()
+cl.enqueue_copy(queue, dweights_1, dweights_1_bf).wait()
+
+cl.enqueue_copy(queue, bevskip, bevskip_bf).wait()
+cl.enqueue_copy(queue, fevskip, fevskip_bf).wait()
+
+
+cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
+cl.enqueue_copy(queue, distances_0, distances_0_bf).wait()
+
+p_sum_1 = np.zeros(global_space_1, dtype=np.float32)
+cl.enqueue_copy(queue, p_sum_1, p_sum_1_bf).wait()
+
+
+
+# TODO cluster 0 seems to be learning real weird stuff
+for i in range(n_clusters_0):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(weights_0[0,i,:,:,0].transpose())
+    
+
+# #TODO something's wrong with this thing here!!! weight updates seem really wrong !!!
+# for i in range(n_clusters_0):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(dweights_0[5,i,:,:,0].transpose())
+    
+for i in range(n_clusters_1):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(weights_1[:,i,0,0,:].transpose())
+plt.ylabel("Layer0 cluster#")    
+
+
+
+# for i in range(n_clusters_1):
+#     plt.figure()
+#     plt.title("cluster: "+str(i))
+#     plt.imshow(dweights_1[0,i,0,0,0].transpose())
+
+# cl.enqueue_copy(queue, time_context_0, time_context_0_bf).wait()
+# time_context_0 =time_context_0[:,:,:,0]
+
+cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
+
+# plt.imshow(TS_np[220])
+# for i in range(10):
+#     plt.figure()
+#     plt.imshow(TS_np[i,:,:,0].transpose())
+
+
+plt.figure()
+plt.imshow(TS_np_1[:,0,0,:].transpose())
+plt.ylabel("Layer0 cluster#")    
+plt.xlabel("Run #")    
+
+
+
+# cl.enqueue_copy(queue, TS_np, TS_bf).wait()
+# cl.enqueue_copy(queue, TS_np_1, TS_bf_1).wait()
+
+# distances_tmp =  np.sum(np.abs(TS_np[0,:,None,:,:,0]-weights_0[0,None,:,:,:,0]),axis=(2,3))
+# np.sum(distances_tmp-distances_0[0])
+
+# cl.enqueue_copy(queue, distances_1, distances_1_bf).wait()
+
+# distances_tmp =  np.sum(np.abs(TS_np_1[0,:,None,:,:,:]-weights_1[0,None,:,:,:,:]),axis=(2,3,4))
+# np.sum(distances_tmp-distances_1[0])
+
+# plt.imshow(weights_1[0,0,:,:,0])
 
 #%% Learning
 

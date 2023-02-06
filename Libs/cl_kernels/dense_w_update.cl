@@ -4,8 +4,8 @@
 #define idx3d(a,al,b,bl,c,cl) a*bl*cl + b*cl + c 
 #define idx2d(a,al,b,bl) a*bl + b
 
-__kernel void conv_w_update(__global int *ts, __global int *surf_x_b, 
-                          __global int *surf_y_b, __global int *n_pol_b,
+__kernel void dense_w_update(__global int *ts, __global int *res_x_b, 
+                          __global int *res_y_b, __global int *n_pol_b,
                           __global int *n_clusters_b, __global int *ev_i_b,
                           __global int *n_events_b, __global double *weights,                          
                           __global int *closest, __global float *lrate_b,
@@ -16,15 +16,15 @@ __kernel void conv_w_update(__global int *ts, __global int *surf_x_b,
     unsigned int n_iter;
     
     int n_clusters=*n_clusters_b;   
-    int surf_x=*surf_x_b;
-    int surf_y=*surf_y_b;
+    int res_x=*res_x_b;
+    int res_y=*res_y_b;
     int n_pol=*n_pol_b;
     int ev_i=*ev_i_b;
     int n_events=*n_events_b;    
     float lrate=*lrate_b;
     
     int lin_idx;
-    int tssize = surf_x*surf_y*n_pol;
+    int tssize = res_x*res_y*n_pol;
     int loc_idx;
     
     __local int ts_i;  
@@ -46,13 +46,13 @@ __kernel void conv_w_update(__global int *ts, __global int *surf_x_b,
             loc_idx = (int)get_local_id(1)+i*(int) get_local_size(1);
             if (loc_idx<tssize){    
                 lin_idx = idx5d(i_file, (int) get_global_size(0), closest[i_file], 
-                                n_clusters, 0, surf_x, 0, surf_y, 0, n_pol)
+                                n_clusters, 0, res_x, 0, res_y, 0, n_pol)
                                 + loc_idx;
                 
                          
                 weights[lin_idx] = weights[lin_idx] + 
-                                          (0.001)*(double)S[i_file]*(double)lrate*dweights[lin_idx] + 
-                                          (double)dS[i_file]*(double)lrate*dweights[lin_idx];
+                                  (0.01)*(double)S[i_file]*(double)lrate*dweights[lin_idx] + 
+                                  (double)dS[i_file]*(double)lrate*dweights[lin_idx];
                 
             }  
         }
