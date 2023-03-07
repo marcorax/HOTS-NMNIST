@@ -903,7 +903,7 @@ class Class_Layer:
         fb_time_context_bf = self.buffers["fb_time_context_bf"]
         fb_time_context_mask_bf = self.buffers["fb_time_context_mask_bf"] 
         fb_partial_sum_bf = self.buffers["fb_partial_sum_bf"]
-        batch_labels_bf = ext_buffer["batch_labels_bf"]
+        closest_c_bf = self.buffers["closest_c_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
         
         batch_size = self.parameters["batch_size"]        
@@ -914,7 +914,7 @@ class Class_Layer:
         self.program.fb_ts_gen(queue, global_space, local_space, ts_bf, 
                                fb_tau_bf, n_clusters_bf, ev_i_bf, n_events_bf,
                                fb_time_context_bf, fb_time_context_mask_bf,
-                               fb_partial_sum_bf, batch_labels_bf, bevskip_bf)
+                               fb_partial_sum_bf, closest_c_bf, bevskip_bf)
         
         
     def queue_feedback_end(self, ext_buffer, queue):
@@ -938,6 +938,8 @@ class Class_Layer:
         fb_partial_sum_bf = self.buffers["fb_partial_sum_bf"]
         S_bf = self.buffers["output_S_bf"] 
         dS_bf = self.buffers["output_dS_bf"] 
+        closest_c_bf = self.buffers["closest_c_bf"]
+        batch_labels_bf = ext_buffer["batch_labels_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
         
         batch_size = self.parameters["batch_size"]        
@@ -948,7 +950,7 @@ class Class_Layer:
         
         self.program.fb_end(queue, global_space, local_space, ts_bf, ev_i_bf,
                             n_events_bf, fb_partial_sum_bf, S_bf, dS_bf,
-                            bevskip_bf)
+                            closest_c_bf, batch_labels_bf, bevskip_bf)
 
     def queue_experimental_weight_reduce(self, ext_buffer, queue):
         """

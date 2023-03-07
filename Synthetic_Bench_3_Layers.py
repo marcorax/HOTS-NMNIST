@@ -582,7 +582,9 @@ n_all_events = len(concat_all_surfs)
 def on_press(key):
     global pause_pressed
     global print_lay
-    
+    global slow_learning
+    global th_0
+    global th_1
     print('{0} pressed'.format(
         key))
     if key.char == ('p'):
@@ -591,7 +593,10 @@ def on_press(key):
         print_lay=1
     if key.char == ('2'):
         print_lay=2
-
+    if key.char == ('s'):
+        slow_learning=True
+        th_0 = np.zeros(n_clusters_0)+10
+        th_1 = np.zeros(n_clusters_1)+10
 
 
 time_context_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
@@ -600,23 +605,27 @@ time_context_fb_1 = np.zeros([n_clusters_1],dtype=int)
 time_context_2 = np.zeros([n_clusters_1, n_words],dtype=int)
 time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 
-tau_1 = 5
-tau_2 = 5
+tau_1 = 1
+tau_2 = 1
 
-lrate_2 = 0.0005
-lrate_1 = 0.0005
-lrate_0 = 0.0005
+lrate_2 = 0.0001
+lrate_1 = 0.0001
+lrate_0 = 0.0001
 
 ###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.
 
-lrate_th_1 = 0.001
-lrate_th_0 = 0.001
+lrate_th_1 = 0.0001
+lrate_th_0 = 0.0001
+th_tau_rel = 0.1
 
+feedback_sep = 0.0001
 
+ratio_sds = 0.01
 
 pause_pressed=False  
+slow_learning = False
 print_lay=2  
 with keyboard.Listener(on_press=on_press) as listener:
     
@@ -643,6 +652,10 @@ with keyboard.Listener(on_press=on_press) as listener:
             y_som_old_1=0
             dt_y_som_1=0   
             
+            if not slow_learning:        
+                th_0 = np.zeros(n_clusters_0)+10
+                th_1 = np.zeros(n_clusters_1)+10     
+                
             for ts_i in range(n_events):
                 
 
@@ -733,7 +746,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         #Layer 2                       
                         #supervised
                         elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_2])
-                        weights_2[:,:,rec_closest_2]+=lrate_2*(dt_y_som_1*elem_distances_2[:]) + 0.01*lrate_2*(y_som_1*elem_distances_2[:])
+                        weights_2[:,:,rec_closest_2]+=lrate_2*(dt_y_som_1*elem_distances_2[:]) + ratio_sds*lrate_2*(y_som_1*elem_distances_2[:])
                         
                         #unsupervised       
                         # elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_1])
@@ -747,15 +760,40 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         # keep only the distances for winners
                         # elem_distances_1=elem_distances_1p[:,:,:]*rec_closest_1_one_hot[None,None,:]
-                        weights_1[:,:,rec_closest_1]+=lrate_1*(dt_y_som_1*elem_distances_1[:]) + 0.01*lrate_1*(y_som_1*elem_distances_1[:])
-                                   
-                        #treshold_coeff
-                        # for i_cluster in range(n_clusters_1):
-                        #     if (i_cluster==rec_closest_1) and (y_som_1<0):
-                        #         th_1[i_cluster] -= lrate_th_1*(th_1[rec_closest_1]-rec_distances_1[rec_closest_1])
-                       
-                        th_1[rec_closest_1] += (np.abs(y_som_1)-1)*lrate_th_1      
-        
+                        weights_1[:,:,rec_closest_1]+=lrate_1*(dt_y_som_1*elem_distances_1[:]) + ratio_sds*lrate_1*(y_som_1*elem_distances_1[:])
+                        
+                        #treshold
+                        if slow_learning:
+                            for i_cluster in range(n_clusters_1): # THIS WORKS
+                                th_tau = th_tau_rel*np.mean(th_1[i_cluster])
+                                # th_tau = 0.5
+                                if i_cluster==rec_closest_1:
+                                    th_dist = th_1[rec_closest_1]-rec_distances_1[rec_closest_1]
+                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_1[rec_closest_1] += lrate_th_1*dt_y_som_1*th_update + ratio_sds*lrate_th_1*y_som_1*th_update
+                                elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0) and (y_som_1>=0) and (dt_y_som_1>=0):
+                                # else:
+                                    th_dist = th_1[i_cluster]-rec_distances_1[i_cluster]
+                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_1[i_cluster] -= lrate_th_1*dt_y_som_1*th_update + ratio_sds*lrate_th_1*y_som_1*th_update
+                                    
+                            # for i_cluster in range(n_clusters_1):
+                            #     th_tau = th_tau_rel*np.abs((th_1[i_cluster]-rec_distances_1[i_cluster]))
+                            #     # th_tau = 0.5
+                            #     if i_cluster==rec_closest_1:
+                            #         th_1[rec_closest_1] += lrate_th_1*dt_y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/th_tau)+0.01*lrate_th_1*y_som_1*np.exp(-np.abs((rec_distances_1[rec_closest_1]-th_1[rec_closest_1]))/th_tau)
+                            #     elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0) and (y_som_1>=0) and (dt_y_som_1>=0):
+                            #     # else:
+                            #         th_1[i_cluster] -= 0.01*lrate_th_1*th_1[i_cluster]
+                                    
+                        if not slow_learning:                            
+                            #fast_threshold_control
+                            for i_cluster in range(n_clusters_1):
+                                if (i_cluster==rec_closest_1) and (y_som_1<0):
+                                    th_1[i_cluster] -=  feedback_sep*th_1[i_cluster]
+                                elif (rec_distances_1[i_cluster]-th_1[i_cluster])<0 and (y_som_1<0):             
+                                    th_1[i_cluster] +=  feedback_sep*th_1[i_cluster]                                    
+            
                         #Layer 0
                         #weights
                         elem_distances_0 = (sentence_surfs[ts_i,:,:,None]-weights_0[:,:,:])
@@ -764,17 +802,53 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         # Keep only the distances for winners
                         elem_distances_0=elem_distances_0[:,:,:]*rec_closest_0_one_hot[None,None,:]
-                        weights_0[:,:,:]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + 0.01*lrate_0*(y_som_0*elem_distances_0[:]))
+                        weights_0[:,:,:]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + ratio_sds*lrate_0*(y_som_0*elem_distances_0[:]))
 
+                        
+                        if slow_learning:                            
+                            # treshold
+                            for i_cluster in range(n_clusters_0):# THIS WORKS
+                                th_tau = th_tau_rel*np.mean(th_0[i_cluster])
+                                # th_tau = 0.5
+                                if i_cluster==rec_closest_0:   
+                                    th_dist = th_0[rec_closest_0]-rec_distances_0[rec_closest_0]
+                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*th_update + ratio_sds*lrate_th_0*y_som_0*th_update
+                                    
+                                elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0)  and (y_som_0>=0) and (dt_y_som_0>=0):
+                                # else:
+                                    th_dist = th_0[i_cluster]-rec_distances_0[i_cluster]
+                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_0[i_cluster] -= lrate_th_0*dt_y_som_0*th_update + ratio_sds*lrate_th_0*y_som_0*th_update
+ 
+                            # #treshold
+                            # for i_cluster in range(n_clusters_0):
+                            #     th_tau = th_tau_rel*np.abs((th_0[i_cluster]-rec_distances_0[i_cluster]))
+                            #     # th_tau = 0.5
+                            #     if i_cluster==rec_closest_0:                                
+                            #         th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/th_tau) + 0.01*lrate_th_0*y_som_0*np.exp(-np.abs((rec_distances_0[rec_closest_0]-th_0[rec_closest_0]))/th_tau)
+                            #     elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0) and (y_som_0>=0) and (dt_y_som_0>=0):
+                            #     # else:
+                            #         th_0[i_cluster] -= 0.01*lrate_th_0*th_0[i_cluster]
+   
+        
 
-                        # #treshold_coeff
-                        # for i_cluster in range(n_clusters_0):
-                        #     if (i_cluster==rec_closest_0) and (y_som_0<0):
-                        #         th_0[i_cluster] -= lrate_th_0*(th_0[rec_closest_0]-rec_distances_0[rec_closest_0])
+                        if not slow_learning:                            
+                            #fast_threshold_control
+                            for i_cluster in range(n_clusters_0):
+                                if (i_cluster==rec_closest_0) and (y_som_0<0):
+                                    th_0[i_cluster] -=  feedback_sep*th_0[i_cluster]
+                                elif (rec_distances_0[i_cluster]-th_0[i_cluster])<0 and (y_som_0<0):             
+                                    th_0[i_cluster] +=  feedback_sep*th_0[i_cluster]
 
                         #treshold_coeff
-                        th_0[rec_closest_0] += (np.abs(y_som_0)-1)*lrate_th_0
-
+                        # for i_cluster in range(n_clusters_0):
+                        #     if (i_cluster==rec_closest_0) and (y_som_0<0):
+                        #         th_0[i_cluster] +=  0.01*y_som_0*lrate_th_0*(th_0[i_cluster]-rec_distances_0[i_cluster])
+                        #     elif (rec_distances_0[i_cluster]-th_0[i_cluster])<0 and (y_som_0>0):                 
+                        #         th_0[i_cluster] -= 0.01*y_som_0*lrate_th_0*(th_0[i_cluster]-rec_distances_0[i_cluster])      
+            
+                        # th_0[rec_closest_0] += (np.abs(y_som_0)-1)*lrate_th_0*(th_0[rec_closest_0]-rec_distances_0[rec_closest_0])
                                                   
 
                         ## PROGRESS UPDATE
@@ -818,10 +892,8 @@ with keyboard.Listener(on_press=on_press) as listener:
                     plt.pause(5)
                     pause_pressed=False
                     
-                      
-            th_0 = np.zeros(n_clusters_0)+10
-            th_1 = np.zeros(n_clusters_1)+10                        
-                    
+                   
+                        
                         
 
     listener.join()

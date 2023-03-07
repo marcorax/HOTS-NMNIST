@@ -87,10 +87,10 @@ n_pol_0 = 1
 tau_0 = 1e5
 n_clusters_0 = 64
 # n_clusters_0 = 1
-lrate_0 = 1e-1
+lrate_0 = 1e-2
 th_lrate_0 = 1e-1
 th_decay_0=0.20
-th_size_0=500
+th_size_0=220
 res_x_0 = 28
 res_y_0 = 28
 
@@ -102,7 +102,7 @@ Dense0 = Dense_Layer(n_clusters_0, tau_0, res_x_0, res_y_0, n_pol_0, lrate_0,
 tau_1 = 1e3#1e3 actually gave some nice features
 tau_1_fb = 1e1
 n_clusters_1=10
-lrate_1 = 1e-1
+lrate_1 = 1e-3
 res_x_1 = 1
 res_y_1 = 1
 
@@ -327,10 +327,10 @@ for epoch_i in range(n_epochs):
         Dense0.batch_flush(queue)
         Class1.batch_flush(queue)
         
-        Dense0.variables["thresholds"][:]=th_size_0
-        thresholds=Dense0.variables["thresholds"]
-        thresholds_bf=Dense0.buffers["thresholds_bf"]
-        cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
+        # Dense0.variables["thresholds"][:]=th_size_0
+        # thresholds=Dense0.variables["thresholds"]
+        # thresholds_bf=Dense0.buffers["thresholds_bf"]
+        # cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
 
 #%% Print
 centroids0 = Dense0.variables["centroids"]

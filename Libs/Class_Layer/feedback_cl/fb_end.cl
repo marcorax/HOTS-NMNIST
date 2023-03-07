@@ -7,6 +7,7 @@
 __kernel void fb_end(__global int *ts, __global int *ev_i_b,
                      __global int *n_events_b, __global double *partial_sum,
                      __global float *S, __global float *dS,
+                     __global int *closest, __global int *batch_labels,
                      __global int *bevskip)
 {                          
     int i_file = (int) get_global_id(0);
@@ -38,6 +39,10 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
         barrier(CLK_GLOBAL_MEM_FENCE);
 
         if (get_local_id(1)==0){
+        
+            if (batch_labels[i_file]!=closest[i_file]){
+                tmp_S = -tmp_S;            
+            }
         
             if(ev_i==0){
                 dS[i_file] = tmp_S;

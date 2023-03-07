@@ -9,7 +9,7 @@ __kernel void fb_ts_gen(__global int *ts, __global int *tau_b,
                         __global int *n_events_b,
                         __global int *tcontext, __global int *ts_mask,
                         __global double *partial_sum, 
-                        __global int *batch_labels, __global int *bevskip)
+                        __global int *closest, __global int *bevskip)
 {                          
     int i_file = (int) get_global_id(0);
     int nfiles = (int) get_global_size(0);
@@ -57,7 +57,7 @@ __kernel void fb_ts_gen(__global int *ts, __global int *tau_b,
                     if (tmp_ts_value>0 && tmp_ts_value<=1){//floatcheck for overflowing
                         ts_value=tmp_ts_value;
 
-                        if (batch_labels[i_file]==loc_idx){
+                        if (closest[i_file]==loc_idx){
                             loc_idx = idx2d(i_file, nfiles, lid, lsize); 
                             partial_sum[loc_idx] = partial_sum[loc_idx] +
                                                      (double)ts_value;}
