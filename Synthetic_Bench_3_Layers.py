@@ -616,8 +616,8 @@ lrate_0 = 0.0001
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.
 
-lrate_th_1 = 0.001
-lrate_th_0 = 0.001
+lrate_th_1 = 0.0002
+lrate_th_0 = 0.0002
 th_tau_rel = 0.1
 
 feedback_sep = 0.00005
@@ -769,12 +769,14 @@ with keyboard.Listener(on_press=on_press) as listener:
                                 # th_tau = 0.5
                                 if i_cluster==rec_closest_1:
                                     th_dist = th_1[rec_closest_1]-rec_distances_1[rec_closest_1]
-                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    # th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_update = np.exp(-th_dist/th_tau)*th_1[rec_closest_1]
                                     th_1[rec_closest_1] += lrate_th_1*dt_y_som_1*th_update + ratio_sds*lrate_th_1*y_som_1*th_update
                                 elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0) and (y_som_1>=0) and (dt_y_som_1>=0):
                                 # else:
                                     th_dist = th_1[i_cluster]-rec_distances_1[i_cluster]
                                     th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_update = np.exp(-th_dist/th_tau)*th_1[i_cluster]
                                     th_1[i_cluster] -= lrate_th_1*dt_y_som_1*th_update + ratio_sds*lrate_th_1*y_som_1*th_update
                                     
                             # for i_cluster in range(n_clusters_1):
@@ -812,13 +814,15 @@ with keyboard.Listener(on_press=on_press) as listener:
                                 # th_tau = 0.5
                                 if i_cluster==rec_closest_0:   
                                     th_dist = th_0[rec_closest_0]-rec_distances_0[rec_closest_0]
-                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    # th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_update = np.exp(-th_dist/th_tau)*th_0[rec_closest_0]
                                     th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*th_update + ratio_sds*lrate_th_0*y_som_0*th_update
                                     
                                 elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0)  and (y_som_0>=0) and (dt_y_som_0>=0):
                                 # else:
                                     th_dist = th_0[i_cluster]-rec_distances_0[i_cluster]
-                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    # th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    th_update = np.exp(-th_dist/th_tau)*th_0[i_cluster]
                                     th_0[i_cluster] -= lrate_th_0*dt_y_som_0*th_update + ratio_sds*lrate_th_0*y_som_0*th_update
  
                             # #treshold
