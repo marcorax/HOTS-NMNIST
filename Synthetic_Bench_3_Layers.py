@@ -616,9 +616,9 @@ lrate_0 = 0.0001
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.
 
-lrate_th_1 = 0.00005
-lrate_th_0 = 0.00005
-th_tau_rel = 0.3
+lrate_th_1 = 0.001
+lrate_th_0 = 0.001
+th_tau_rel = 0.1
 
 feedback_sep = 0.00005
 
