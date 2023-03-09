@@ -89,10 +89,10 @@ n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-lrate_0 = 5e-2
+lrate_0 = 2e-2
 th_lrate_0 = 5e-3
 
-th_decay_0=0.1
+th_decay_0=0.05
 th_size_0=300
 res_x_0 = 28
 res_y_0 = 28
@@ -105,7 +105,7 @@ Dense0 = Dense_Layer(n_clusters_0, tau_0, res_x_0, res_y_0, n_pol_0, lrate_0,
 tau_1 = 1e3#1e3 actually gave some nice features
 tau_1_fb = 1e1
 n_clusters_1=10
-lrate_1 = 1e-3
+lrate_1 = 1e-4
 res_x_1 = 1
 res_y_1 = 1
 
@@ -246,12 +246,21 @@ thresholds_bf=Dense0.buffers["thresholds_bf"]
 cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
 
 th_lrate_0 = 5e-5
+lrate_0 = 7e-3
+lrate_1 = 1e-4
 
 
 Dense0.parameters["th_lrate"]=th_lrate_0
 th_lrate_bf=Dense0.buffers["th_lrate_bf"]
 cl.enqueue_copy(queue, th_lrate_bf, np.float32(th_lrate_0)).wait()
     
+Dense0.parameters["lrate"]=lrate_0
+lrate_0_bf=Dense0.buffers["lrate_bf"]
+cl.enqueue_copy(queue, lrate_0_bf, np.float32(lrate_0)).wait()
+
+Class1.parameters["lrate"]=lrate_1
+lrate_1_bf=Dense0.buffers["lrate_bf"]
+cl.enqueue_copy(queue, lrate_1_bf, np.float32(lrate_1)).wait()
 
 rec = 0
 epoch_i=0
