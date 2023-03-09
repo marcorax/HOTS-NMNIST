@@ -92,7 +92,7 @@ n_clusters_0 = 32
 lrate_0 = 5e-2
 th_lrate_0 = 5e-3
 
-th_decay_0=0.20
+th_decay_0=0.1
 th_size_0=300
 res_x_0 = 28
 res_y_0 = 28
