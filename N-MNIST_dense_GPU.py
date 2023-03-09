@@ -77,7 +77,7 @@ queue = cl.CommandQueue(ctx)
 #%% Create the network
 
 # Parameters
-batch_size = 128
+batch_size = 256
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
@@ -85,15 +85,15 @@ n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some res
 #Dense Layer 1 data and parameters
 n_pol_0 = 1
 tau_0 = 1e5
-n_clusters_0 = 64
+n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-lrate_0 = 1e-3
-th_lrate_0 = 1e-4
+lrate_0 = 8e-2
+th_lrate_0 = 5e-3
 
 th_decay_0=0.20
-th_size_0=220
+th_size_0=300
 res_x_0 = 28
 res_y_0 = 28
 
@@ -201,9 +201,9 @@ for batch_i in range(n_batches):
     start_exec = time.time()
     for ev_i in range(n_max_events):
         
-        Dense0.init_infer(net_buffers, queue)
-        Class1.init_infer(net_buffers, queue)
-        Class1.init_learn(net_buffers, queue)
+        Dense0.infer(net_buffers, queue)
+        Class1.infer(net_buffers, queue)
+        Class1.learn(net_buffers, queue)
         Dense0.init_learn(net_buffers, queue)
         kernel=program.next_ev(queue, np.array([batch_size]), None, ev_i_bf)
     
@@ -334,7 +334,7 @@ for epoch_i in range(n_epochs):
         print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
         print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
         
-        Dense0.batch_flush(queue)
+        Dense0.batch_flush(queue) 
         Class1.batch_flush(queue)
         
         # Dense0.variables["thresholds"][:]=th_size_0
@@ -342,7 +342,7 @@ for epoch_i in range(n_epochs):
         # thresholds_bf=Dense0.buffers["thresholds_bf"]
         # cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
 
-#%% Print
+#%% Printinit_learn
 centroids0 = Dense0.variables["centroids"]
 centroids1 = Class1.variables["centroids"]
 

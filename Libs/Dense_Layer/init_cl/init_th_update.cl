@@ -38,11 +38,11 @@ __kernel void init_th_update(__global int *ts, __global int *n_clusters_b,
                  
             }
 
-            else if ((distances[lin_idx]-th[lin_idx])<0 && S[i_file]<0){
-
-                  th[lin_idx] = th[lin_idx] + (double)lrate*(th[lin_idx]);
-                
-            }    
+//             else if ((distances[lin_idx]-th[lin_idx])<0 && S[i_file]<0){
+// 
+//                   th[lin_idx] = th[lin_idx] + (double)lrate*(th[lin_idx]);
+//                 
+//             }    
         }            
     }
 }

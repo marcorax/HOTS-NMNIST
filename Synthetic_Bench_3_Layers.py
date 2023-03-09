@@ -793,8 +793,8 @@ with keyboard.Listener(on_press=on_press) as listener:
                             for i_cluster in range(n_clusters_1):
                                 if (i_cluster==rec_closest_1) and (y_som_1<0):
                                     th_1[i_cluster] -=  feedback_sep*th_1[i_cluster]
-                                elif (rec_distances_1[i_cluster]-th_1[i_cluster])<0 and (y_som_1<0):             
-                                    th_1[i_cluster] +=  feedback_sep*th_1[i_cluster]                                    
+                                # elif (rec_distances_1[i_cluster]-th_1[i_cluster])<0 and (y_som_1<0):             
+                                #     th_1[i_cluster] +=  feedback_sep*th_1[i_cluster]                                    
             
                         #Layer 0
                         #weights
@@ -842,8 +842,8 @@ with keyboard.Listener(on_press=on_press) as listener:
                             for i_cluster in range(n_clusters_0):
                                 if (i_cluster==rec_closest_0) and (y_som_0<0):
                                     th_0[i_cluster] -=  feedback_sep*th_0[i_cluster]
-                                elif (rec_distances_0[i_cluster]-th_0[i_cluster])<0 and (y_som_0<0):             
-                                    th_0[i_cluster] +=  feedback_sep*th_0[i_cluster]
+                                # elif (rec_distances_0[i_cluster]-th_0[i_cluster])<0 and (y_som_0<0):             
+                                #     th_0[i_cluster] +=  feedback_sep*th_0[i_cluster]
 
                         #treshold_coeff
                         # for i_cluster in range(n_clusters_0):
