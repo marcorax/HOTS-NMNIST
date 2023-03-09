@@ -515,7 +515,9 @@ class Class_Layer:
             self.queue_time_surface_generation(ext_buffer, queue)
             self.queue_partial_distances(ext_buffer, queue)
             self.queue_reduction_distances(ext_buffer, queue)
-            self.queue_init_infer_end(ext_buffer, queue)
+            # self.queue_init_infer_end(ext_buffer, queue)
+            self.queue_infer_end(ext_buffer, queue)
+
             
     def init_learn(self, ext_buffer, queue):
         """
@@ -535,7 +537,9 @@ class Class_Layer:
             self.queue_feedback_time_surface_generation(ext_buffer, queue)
             self.queue_feedback_end(ext_buffer, queue)
             
-        self.queue_init_weight_update(ext_buffer, queue)
+        # self.queue_init_weight_update(ext_buffer, queue)
+        self.queue_weight_update(ext_buffer, queue)
+
         # self.queue_experimental_weight_reduce(ext_buffer, queue) 
         
     def queue_context_update(self, ext_buffer, queue):

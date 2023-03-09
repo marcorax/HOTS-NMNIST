@@ -458,7 +458,11 @@ class Dense_Layer:
         f = open(dr+"init_w_update.cl", 'r')
         init_w_update = "".join(f.readlines())
 
-        programtxt = programtxt + init_infer_end + init_w_update
+        dr = "Libs/Dense_Layer/init_cl/"
+        f = open(dr+"init_th_update.cl", 'r')
+        init_th_update = "".join(f.readlines())
+
+        programtxt = programtxt + init_infer_end + init_w_update + init_th_update
                 
         self.program=cl.Program(ctx, programtxt).build(options='-cl-std=CL2.0')
         
@@ -523,7 +527,7 @@ class Dense_Layer:
             self.queue_time_surface_generation(ext_buffer, queue)
             self.queue_partial_distances(ext_buffer, queue)
             self.queue_reduction_distances(ext_buffer, queue)
-            self.queue_init_infer_end(ext_buffer, queue)      
+            self.queue_infer_end(ext_buffer, queue)      
 
     def init_learn(self, ext_buffer, queue):
         """
@@ -543,8 +547,10 @@ class Dense_Layer:
             self.queue_feedback_time_surface_generation(ext_buffer, queue)
             self.queue_feedback_end(ext_buffer, queue)
             
-        self.queue_init_weight_update(ext_buffer, queue)
-        self.queue_threshold_update(ext_buffer, queue)
+        # self.queue_init_weight_update(ext_buffer, queue)
+        # self.queue_threshold_update(ext_buffer, queue)
+        self.queue_weight_update(ext_buffer, queue)
+        self.queue_init_threshold_update(ext_buffer, queue)
 
     
     def queue_context_update(self, ext_buffer, queue):
@@ -851,6 +857,44 @@ class Dense_Layer:
                               res_x_bf, res_y_bf, n_pol_bf, n_clusters_bf,
                               ev_i_bf, n_events_bf, centroids_bf, closest_c_bf,
                               lrate_bf, S_bf, dS_bf, dcentroids_bf, bevskip_bf)
+        
+    def queue_init_threshold_update(self, ext_buffer, queue):
+        """
+        Method to queue the th_update kernel
+        
+        Parameters:
+            
+            ext_buffer : dictionary containing the required buffers for kernel
+                         execution that could not being generated during the 
+                         layer initialization.
+            
+            queue : OpenCL queue                          
+            
+        """
+        
+
+        ts_bf = ext_buffer["ts_bf"]        
+        n_clusters_bf = self.buffers["n_clusters_bf"]
+        ev_i_bf = ext_buffer["ev_i_bf"] 
+        n_events_bf = ext_buffer["n_events_bf"]      
+        th_lrate_bf = self.buffers["th_lrate_bf"]
+        closest_c_bf = self.buffers["closest_c_bf"]
+        S_bf = self.buffers["input_S_bf"] 
+        dS_bf = self.buffers["input_dS_bf"] 
+        distances_bf = self.buffers["distances_bf"]
+        thresholds_bf = self.buffers["thresholds_bf"]
+        bevskip_bf = ext_buffer["bevskip_bf"] 
+        
+        batch_size = self.parameters["batch_size"]        
+
+        global_space = (batch_size, self.__loc_cl_size)
+        local_space = (1, self.__loc_cl_size)
+        
+        self.program.init_th_update(queue, global_space, local_space, ts_bf,
+                                    n_clusters_bf, ev_i_bf, n_events_bf, 
+                                    th_lrate_bf,
+                                    closest_c_bf, S_bf, dS_bf, distances_bf,
+                                    thresholds_bf, bevskip_bf)
     
     def queue_threshold_update(self, ext_buffer, queue):
         """
@@ -996,6 +1040,8 @@ class Dense_Layer:
         self.program.fb_end(queue, global_space, local_space, ts_bf, ev_i_bf,
                             n_events_bf, closest_c_bf, batch_labels_bf,
                             fb_partial_sum_bf, S_bf, dS_bf, bevskip_bf)
+        
+#EXPERIMENTAL (Marked for removal)
 
     def queue_experimental_weight_reduce(self, ext_buffer, queue):
         """

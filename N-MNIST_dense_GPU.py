@@ -87,8 +87,11 @@ n_pol_0 = 1
 tau_0 = 1e5
 n_clusters_0 = 64
 # n_clusters_0 = 1
-lrate_0 = 1e-2
-th_lrate_0 = 1e-1
+# lrate_0 = 1e-2
+# th_lrate_0 = 1e-1
+lrate_0 = 1e-3
+th_lrate_0 = 1e-4
+
 th_decay_0=0.20
 th_size_0=220
 res_x_0 = 28
@@ -126,6 +129,7 @@ fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
 bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
 
 #%% Initialize clusters
+
 rec = 0
 epoch_i=0
 n_batches = 60000//batch_size
@@ -135,12 +139,14 @@ ev_i = 0
 
 rec=0
 
+
+
 f = open('Libs/cl_kernels/next_ev.cl', 'r')
 fstr = "".join(f.readlines())
 program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
 
 
-for batch_i in range(30):     
+for batch_i in range(n_batches):     
     n_events_rec=np.zeros(batch_size, dtype=int)
     for i in range(batch_size):
         data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
@@ -222,6 +228,10 @@ for batch_i in range(30):
     Dense0.batch_flush(queue)
     Class1.batch_flush(queue)
     
+    Dense0.variables["thresholds"][:]=th_size_0
+    thresholds=Dense0.variables["thresholds"]
+    thresholds_bf=Dense0.buffers["thresholds_bf"]
+    cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
     
     
     
