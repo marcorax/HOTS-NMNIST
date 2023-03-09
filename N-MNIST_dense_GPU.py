@@ -89,7 +89,7 @@ n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-lrate_0 = 8e-2
+lrate_0 = 5e-2
 th_lrate_0 = 5e-3
 
 th_decay_0=0.20
@@ -239,6 +239,19 @@ for batch_i in range(n_batches):
                
 
 #%% Train
+
+Dense0.variables["thresholds"][:]=th_size_0
+thresholds=Dense0.variables["thresholds"]
+thresholds_bf=Dense0.buffers["thresholds_bf"]
+cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
+
+th_lrate_0 = 5e-5
+
+
+Dense0.parameters["th_lrate"]=th_lrate_0
+th_lrate_bf=Dense0.buffers["th_lrate_bf"]
+cl.enqueue_copy(queue, th_lrate_bf, np.float32(th_lrate_0)).wait()
+    
 
 rec = 0
 epoch_i=0

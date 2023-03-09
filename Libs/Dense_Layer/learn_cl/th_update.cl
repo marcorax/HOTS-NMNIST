@@ -35,7 +35,6 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
             
             tau_th=tau_th*th[lin_idx];
            
-//             if(cluster_i==closest[i_file] && S[i_file]<0){   
             if(cluster_i==closest[i_file]){                         
                       
                  th[lin_idx] = th[lin_idx] + th[lin_idx]*(
