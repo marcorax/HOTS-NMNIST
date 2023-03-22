@@ -7,7 +7,7 @@
 __kernel void th_update(__global int *ts, __global int *n_clusters_b,
                         __global int *ev_i_b, __global int *n_events_b,
                         __global float *lrate_b, __global int *closest,
-                        __global float *S, __global float *dS,
+                        __global float *S, __global float *s_gain_b, __global float *dS,
                         __global double *distances,  __global double *th,
                         __global float *tau_th_b,   __global int *bevskip)
 {
@@ -20,6 +20,8 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
     int n_events=*n_events_b;    
     float lrate=*lrate_b;
     float tau_th = *tau_th_b;
+    
+    float s_gain = *s_gain_b;
     
     int lin_idx;
     
@@ -39,13 +41,13 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
                       
                  th[lin_idx] = th[lin_idx] + th[lin_idx]*(
                                 (double)lrate*(double)dS[i_file]*(double)exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th)+
-                                (0.01)*(double)lrate*S[i_file]*(double)exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th));
+                                (double)s_gain*(double)lrate*S[i_file]*(double)exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th));
             }
             else if ((distances[lin_idx]-th[lin_idx])<0 && dS[i_file]>=0 && S[i_file]>=0){
 
                   th[lin_idx] = th[lin_idx] - th[lin_idx]*(
-                                (double)lrate*(double)dS[i_file]*exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th)-
-                                (0.01)*(double)lrate*(double)S[i_file]*exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th));                    
+                                (double)lrate*(double)dS[i_file]*exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th)+
+                                (double)s_gain*(double)lrate*(double)S[i_file]*exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th));                    
             }    
         }            
     }

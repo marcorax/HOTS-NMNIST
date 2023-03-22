@@ -9,6 +9,7 @@ __kernel void infer_end(__global int *ts,
                         __global int *n_events_b, __global int *batch_labels,
                         __global double *distances, __global int *closest, 
                         __global int *processed_ev, __global int *correct_ev,
+                        __global int *correct_response,
                         __global int *fevskip, __global int *bevskip)
 {
     int i_file = (int) get_global_id(0);
@@ -45,7 +46,10 @@ __kernel void infer_end(__global int *ts,
     bevskip[i_file] = fevskip[i_file];     
     if (closest[i_file]==batch_labels[i_file] && ts_i!=-1 && fevskip[i_file]==0){
         correct_ev[i_file] += 1;
-    }  
-    
+        correct_response[i_file] = 1;
+    }
+    else { 
+        correct_response[i_file] = 0;
+    }
     fevskip[i_file]=0;
 }

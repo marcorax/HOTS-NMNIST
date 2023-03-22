@@ -7,7 +7,7 @@
 __kernel void fb_end(__global int *ts, __global int *ev_i_b,
                      __global int *n_events_b, __global double *partial_sum,
                      __global float *S, __global float *dS,
-                     __global int *closest, __global int *batch_labels,
+                     __global int *correct_response,
                      __global int *bevskip)
 {                          
     int i_file = (int) get_global_id(0);
@@ -16,7 +16,7 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
     int lsize = (int) get_local_size(1);
     
     int ev_i=*ev_i_b;
-    int n_events=*n_events_b;    
+    int n_events=*n_events_b;   
 
     int lin_idx;
     int ts_i;  
@@ -40,7 +40,7 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
 
         if (get_local_id(1)==0){
         
-            if (batch_labels[i_file]!=closest[i_file]){
+            if (correct_response[i_file]==0){
                 tmp_S = -tmp_S;            
             }
         

@@ -67,6 +67,8 @@ class Class_Layer:
         
         batch_size : size of the batch for the opencl execution
         
+        s_gain : additional learning rate that affects S signals  
+        
         fb_signal : If True, the layer calculates the feedback signal S, to instruct the learning of lower layers.
 
         fb_tau : exponential decay tau for the feedback time surface generation            
@@ -77,7 +79,7 @@ class Class_Layer:
     """
     
     def __init__(self, n_clusters, tau, res_x, res_y, n_pol, lrate,
-                 ctx, batch_size, fb_signal=True, fb_tau=None,
+                 ctx, batch_size, s_gain, fb_signal=True, fb_tau=None,
                  debug=False):
         
         self.fb_signal = fb_signal
@@ -96,6 +98,8 @@ class Class_Layer:
         if loc_ts_size>max_workgroup_size:
             loc_ts_size=max_workgroup_size
         self.__loc_ts_size = loc_ts_size
+        print(loc_ts_size)
+
             
         loc_cl_size = n_clusters # OpeCL local size for kernel operating on th
                                  # threshold update
@@ -115,7 +119,8 @@ class Class_Layer:
                       "lrate" : lrate,
                       "fb_tau" : fb_tau,
                       "ctx" : ctx,
-                      "batch_size" : batch_size}
+                      "batch_size" : batch_size,
+                      "s_gain" : s_gain}
        
         self.parameters = param_dict
         
@@ -133,6 +138,10 @@ class Class_Layer:
         
         centroids = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=w_prec)
         centroids[:] = np.random.rand(n_clusters, res_x, res_y, n_pol)
+        
+        # n_pol_per_cluster = n_pol//n_clusters
+        # for i_cluster in range(n_clusters):
+        #     centroids[:,i_cluster,:,:,np.arange(0,n_pol_per_cluster)+n_pol_per_cluster*i_cluster]=1
         
         #Used to store the dstep in direction of the new centroid position
         dcentroids = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=w_prec)
@@ -156,6 +165,7 @@ class Class_Layer:
             fb_time_context = np.zeros([batch_size, n_clusters],dtype=np.int32) 
             fb_time_context_mask = np.zeros([batch_size, n_clusters],dtype=np.int32)
             fb_partial_sum = np.zeros([batch_size,n_clusters],dtype=dist_prec) 
+            correct_response = np.zeros([batch_size],dtype=np.int32)
 
         else:
             output_S=None
@@ -163,6 +173,7 @@ class Class_Layer:
             fb_time_context = None
             fb_time_context_mask = None
             fb_partial_sum = None
+            correct_response = None
         
         var_dict = {"centroids" : centroids,
                     "dcentroids" : dcentroids,
@@ -178,7 +189,8 @@ class Class_Layer:
                     "output_S" : output_S,
                     "output_dS" : output_dS,
                     "processed_ev" : processed_ev,
-                    "correct_ev" : correct_ev}
+                    "correct_ev" : correct_ev,
+                    "correct_response" : correct_response}
         
         self.variables = var_dict
         
@@ -203,6 +215,7 @@ class Class_Layer:
         res_y=self.parameters["res_y"] 
         n_pol=self.parameters["n_pol"] 
         lrate=self.parameters["lrate"] 
+        s_gain=self.parameters["s_gain"] 
         ctx=self.parameters["ctx"] 
 
         n_clusters_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters)) 
@@ -211,14 +224,15 @@ class Class_Layer:
         res_y_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_y)) 
         n_pol_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_pol)) 
         lrate_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate)) 
-
+        s_gain_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.float32(s_gain)) 
 
         self.buffers = {"n_clusters_bf" : n_clusters_bf,
                         "tau_bf" : tau_bf,
                         "res_x_bf" : res_x_bf,
                         "res_y_bf" : res_y_bf, 
                         "n_pol_bf" : n_pol_bf,
-                        "lrate_bf" : lrate_bf}
+                        "lrate_bf" : lrate_bf,
+                        "s_gain_bf" : s_gain_bf}
         
         centroids  = self.variables["centroids"]
         dcentroids  = self.variables["dcentroids"]
@@ -230,6 +244,7 @@ class Class_Layer:
         time_surface  = self.variables["time_surface"]
         processed_ev  = self.variables["processed_ev"]
         correct_ev  = self.variables["correct_ev"]
+        correct_response = self.variables["correct_response"]
 
         output_S  = self.variables["output_S"]  
         output_dS  = self.variables["output_dS"]  
@@ -255,6 +270,7 @@ class Class_Layer:
             fb_time_context_mask_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fb_time_context_mask) 
             fb_partial_sum_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fb_partial_sum) 
             fb_tau_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(fb_tau)) 
+            correct_response_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=correct_response) 
         else:
             output_S_bf=None
             output_dS_bf=None
@@ -262,6 +278,7 @@ class Class_Layer:
             fb_time_context_mask_bf=None
             fb_partial_sum_bf=None
             fb_tau_bf=None
+            correct_response_bf=None
         
         
         self.buffers["centroids_bf"] = centroids_bf
@@ -280,6 +297,8 @@ class Class_Layer:
         self.buffers["fb_tau_bf"] = fb_tau_bf
         self.buffers["processed_ev_bf"] = processed_ev_bf
         self.buffers["correct_ev_bf"] = correct_ev_bf
+        self.buffers["correct_response_bf"] = correct_response_bf
+
 
                 
         
@@ -305,10 +324,12 @@ class Class_Layer:
             output_dS = np.zeros([batch_size],dtype=np.float32)
             fb_time_context = np.zeros([batch_size, n_clusters],dtype=np.int32)     
             fb_time_context_mask = np.zeros([batch_size, n_clusters],dtype=np.int32)
+            correct_response=np.zeros([batch_size],dtype=np.int32)
             self.variables["output_S"] = output_S
             self.variables["output_dS"] = output_dS
             self.variables["fb_time_context"] = fb_time_context
             self.variables["fb_time_context_mask"] = fb_time_context_mask
+            self.variables["correct_response"] = correct_response
         
         
         time_context = np.zeros([batch_size, res_x, res_y, n_pol],dtype=np.int32) #time context matrix        
@@ -326,14 +347,18 @@ class Class_Layer:
             output_dS_bf = self.buffers["output_dS_bf"] 
             fb_time_context_bf = self.buffers["fb_time_context_bf"] 
             fb_time_context_mask_bf = self.buffers["fb_time_context_mask_bf"] 
+            correct_response_bf = self.buffers["correct_response_bf"]
             cl.enqueue_copy(queue, output_S_bf, output_S) 
             cl.enqueue_copy(queue, output_dS_bf, output_dS) 
             cl.enqueue_copy(queue, fb_time_context_bf, fb_time_context) 
-            cl.enqueue_copy(queue, fb_time_context_mask_bf, fb_time_context_mask).wait()
+            cl.enqueue_copy(queue, fb_time_context_mask_bf, fb_time_context_mask)
+            cl.enqueue_copy(queue, correct_response_bf, correct_response).wait()
             self.buffers["output_S_bf"] = output_S_bf
             self.buffers["output_dS_bf"] = output_dS_bf
             self.buffers["fb_time_context_bf"] = fb_time_context_bf
             self.buffers["fb_time_context_mask_bf"] = fb_time_context_mask_bf
+            self.buffers["correct_response_bf"] = correct_response_bf
+
         
         time_context_bf = self.buffers["time_context_bf"]
         time_context_mask_bf = self.buffers["time_context_mask_bf"]    
@@ -717,6 +742,7 @@ class Class_Layer:
         correct_ev_bf = self.buffers["correct_ev_bf"]
         fevskip_bf = ext_buffer["fevskip_bf"] 
         bevskip_bf = ext_buffer["bevskip_bf"] 
+        correct_response_bf = self.buffers["correct_response_bf"]
 
         
         batch_size = self.parameters["batch_size"]        
@@ -728,7 +754,7 @@ class Class_Layer:
                                n_clusters_bf, ev_i_bf,
                                n_events_bf, batch_labels_bf, distances_bf, 
                                closest_c_bf, processed_ev_bf, correct_ev_bf,
-                               fevskip_bf, bevskip_bf)
+                               correct_response_bf, fevskip_bf, bevskip_bf)
         
     def queue_init_infer_end(self, ext_buffer, queue):
         """
@@ -795,6 +821,7 @@ class Class_Layer:
         closest_c_bf = self.buffers["closest_c_bf"]
         lrate_bf = self.buffers["lrate_bf"] 
         S_bf = self.buffers["output_S_bf"] 
+        s_gain_bf = self.buffers["s_gain_bf"]
         dS_bf = self.buffers["output_dS_bf"] 
         dcentroids_bf = self.buffers["dcentroids_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
@@ -807,7 +834,7 @@ class Class_Layer:
         self.program.w_update(queue, global_space, local_space, ts_bf,
                               res_x_bf, res_y_bf, n_pol_bf, n_clusters_bf,
                               ev_i_bf, n_events_bf, centroids_bf, closest_c_bf,
-                              lrate_bf, S_bf, dS_bf, dcentroids_bf, bevskip_bf)
+                              lrate_bf, S_bf, s_gain_bf, dS_bf, dcentroids_bf, bevskip_bf)
 
     def queue_init_weight_update(self, ext_buffer, queue):
         """
@@ -942,9 +969,9 @@ class Class_Layer:
         fb_partial_sum_bf = self.buffers["fb_partial_sum_bf"]
         S_bf = self.buffers["output_S_bf"] 
         dS_bf = self.buffers["output_dS_bf"] 
-        closest_c_bf = self.buffers["closest_c_bf"]
-        batch_labels_bf = ext_buffer["batch_labels_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
+        correct_response_bf = self.buffers["correct_response_bf"]
+
         
         batch_size = self.parameters["batch_size"]        
 
@@ -954,7 +981,7 @@ class Class_Layer:
         
         self.program.fb_end(queue, global_space, local_space, ts_bf, ev_i_bf,
                             n_events_bf, fb_partial_sum_bf, S_bf, dS_bf,
-                            closest_c_bf, batch_labels_bf, bevskip_bf)
+                            correct_response_bf, bevskip_bf)
 
     def queue_experimental_weight_reduce(self, ext_buffer, queue):
         """

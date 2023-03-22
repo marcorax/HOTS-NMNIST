@@ -67,12 +67,13 @@ class Dense_Layer:
         
         th_lrate : threshold learning rate
         
-        th_decay : threshold decay, between 1 and 0.
-        
+        th_decay : threshold decay, between 1 and 0.        
         
         ctx : Open CL context
         
         batch_size : size of the batch for the opencl execution
+        
+        s_gain : additional learning rate that affects S signals  
         
         fb_signal : If True, the layer calculates the feedback signal S, to instruct the learning of lower layers.
         
@@ -84,7 +85,7 @@ class Dense_Layer:
     """
     
     def __init__(self, n_clusters, tau, res_x, res_y, n_pol, lrate,
-                 th_size, th_lrate, th_decay, ctx, batch_size,
+                 th_size, th_lrate, th_decay, ctx, batch_size, s_gain,
                  fb_signal=False, fb_tau=None, debug=False):
         
         self.fb_signal = fb_signal
@@ -125,7 +126,9 @@ class Dense_Layer:
                       "th_decay" : th_decay,
                       "fb_tau" : fb_tau,
                       "ctx" : ctx,
-                      "batch_size" : batch_size}
+                      "batch_size" : batch_size,
+                      "s_gain" : s_gain}
+
        
         self.parameters = param_dict
         
@@ -215,6 +218,7 @@ class Dense_Layer:
         lrate=self.parameters["lrate"] 
         th_lrate=self.parameters["th_lrate"] 
         th_decay=self.parameters["th_decay"] 
+        s_gain=self.parameters["s_gain"] 
         ctx=self.parameters["ctx"] 
 
         n_clusters_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_clusters)) 
@@ -223,6 +227,7 @@ class Dense_Layer:
         res_y_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(res_y)) 
         n_pol_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_pol)) 
         lrate_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.float32(lrate)) 
+        s_gain_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.float32(s_gain)) 
         th_lrate_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.float32(th_lrate)) 
         th_decay_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.float32(th_decay)) 
         
@@ -232,6 +237,7 @@ class Dense_Layer:
                         "res_y_bf" : res_y_bf, 
                         "n_pol_bf" : n_pol_bf,
                         "lrate_bf" : lrate_bf,
+                        "s_gain_bf" : s_gain_bf,
                         "th_lrate_bf" : th_lrate_bf,
                         "th_decay_bf" : th_decay_bf}
         
@@ -804,6 +810,7 @@ class Dense_Layer:
         closest_c_bf = self.buffers["closest_c_bf"]
         lrate_bf = self.buffers["lrate_bf"] 
         S_bf = self.buffers["input_S_bf"] 
+        s_gain_bf = self.buffers["s_gain_bf"]
         dS_bf = self.buffers["input_dS_bf"] 
         dcentroids_bf = self.buffers["dcentroids_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
@@ -816,7 +823,7 @@ class Dense_Layer:
         self.program.w_update(queue, global_space, local_space, ts_bf,
                               res_x_bf, res_y_bf, n_pol_bf, n_clusters_bf,
                               ev_i_bf, n_events_bf, centroids_bf, closest_c_bf,
-                              lrate_bf, S_bf, dS_bf, dcentroids_bf, bevskip_bf)
+                              lrate_bf, S_bf, s_gain_bf, dS_bf, dcentroids_bf, bevskip_bf)
         
     def queue_init_weight_update(self, ext_buffer, queue):
         """
@@ -918,6 +925,7 @@ class Dense_Layer:
         th_lrate_bf = self.buffers["th_lrate_bf"]
         closest_c_bf = self.buffers["closest_c_bf"]
         S_bf = self.buffers["input_S_bf"] 
+        s_gain_bf = self.buffers["s_gain_bf"]
         dS_bf = self.buffers["input_dS_bf"] 
         distances_bf = self.buffers["distances_bf"]
         thresholds_bf = self.buffers["thresholds_bf"]
@@ -931,7 +939,7 @@ class Dense_Layer:
         
         self.program.th_update(queue, global_space, local_space, ts_bf,
                                n_clusters_bf, ev_i_bf, n_events_bf, th_lrate_bf,
-                               closest_c_bf, S_bf, dS_bf, distances_bf,
+                               closest_c_bf, S_bf, s_gain_bf, dS_bf, distances_bf,
                                thresholds_bf, th_decay_bf, bevskip_bf)
         
     def queue_feedback_context_update(self, ext_buffer, queue):
@@ -1030,6 +1038,7 @@ class Dense_Layer:
         S_bf = self.buffers["output_S_bf"] 
         dS_bf = self.buffers["output_dS_bf"] 
         bevskip_bf = ext_buffer["bevskip_bf"] 
+        correct_response_bf = self.buffers["correct_response_bf"]
         
         batch_size = self.parameters["batch_size"]        
 
@@ -1038,7 +1047,7 @@ class Dense_Layer:
         local_space = (1, self.__loc_cl_size)
         
         self.program.fb_end(queue, global_space, local_space, ts_bf, ev_i_bf,
-                            n_events_bf, closest_c_bf, batch_labels_bf,
+                            n_events_bf, correct_response_bf,
                             fb_partial_sum_bf, S_bf, dS_bf, bevskip_bf)
         
 #EXPERIMENTAL (Marked for removal)
