@@ -45,6 +45,8 @@ __kernel void infer_end(__global int *xs,__global int *ys,
         
         lin_idx = idx2d(i_file, nfiles, ev_i, n_events);
         ps[lin_idx] = closest[i_file];
+//         xs[lin_idx] = xs[lin_idx]/7;
+//         ys[lin_idx] = ys[lin_idx]/7;
 
     
         lin_idx = idx2d(i_file, nfiles, closest[i_file], n_clusters);

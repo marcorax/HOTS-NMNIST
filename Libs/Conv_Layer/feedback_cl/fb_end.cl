@@ -17,7 +17,6 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
     
     int ev_i=*ev_i_b;
     int n_events=*n_events_b;    
-
     int lin_idx;
     int ts_i;  
     int loc_idx;

@@ -5,9 +5,9 @@
 #define idx2d(a,al,b,bl) a*bl + b
 
 __kernel void fb_end(__global int *ts, __global int *ev_i_b,
-                     __global int *n_events_b, __global int *correct_response,
-                     __global double *partial_sum,
+                     __global int *n_events_b, __global double *partial_sum,
                      __global float *S, __global float *dS, 
+                     __global int *correct_response,
                      __global int *bevskip)
 {                          
     int i_file = (int) get_global_id(0);
@@ -39,15 +39,18 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
 
         if (get_local_id(1)==0){
         
-            if (correct_response[i_file] == 0){
-            tmp_S = -tmp_S;}
-        
             if(ev_i==0){
                 dS[i_file] = tmp_S;
             }
             else{
-                dS[i_file] = tmp_S-S[i_file];
+                dS[i_file] = fabs(tmp_S-S[i_file]);
             }
+            
+            if (correct_response[i_file]==0){
+                tmp_S = -tmp_S;  
+                dS[i_file] = -dS[i_file];          
+            }
+                    
             
             S[i_file] = tmp_S;
         

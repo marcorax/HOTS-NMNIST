@@ -137,7 +137,7 @@ class Class_Layer:
         self.__ts_prec = ts_prec 
         
         centroids = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=w_prec)
-        centroids[:] = np.random.rand(n_clusters, res_x, res_y, n_pol)
+        centroids[:] = np.random.rand(n_clusters, res_x, res_y, n_pol)*0.0001
         
         # n_pol_per_cluster = n_pol//n_clusters
         # for i_cluster in range(n_clusters):
@@ -270,7 +270,7 @@ class Class_Layer:
             fb_time_context_mask_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fb_time_context_mask) 
             fb_partial_sum_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fb_partial_sum) 
             fb_tau_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(fb_tau)) 
-            correct_response_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=correct_response) 
+            correct_response_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_response) 
         else:
             output_S_bf=None
             output_dS_bf=None

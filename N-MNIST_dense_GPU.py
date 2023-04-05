@@ -457,25 +457,31 @@ for epoch_i in range(n_epochs):
 #%% Create the network three layers
 
 # Parameters
-batch_size = 32 #too high and it might affect how fast it converges 128 it halts progression
+# batch_size = 32 #too high and it might affect how fast it converges 128 it halts progression
+batch_size = 64 #too high and it might affect how fast it converges 128 it halts progression
+
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
 
 
 #Dense Layer 1 data and parameters
 n_pol_0 = 1
-tau_0 = 1e5
+tau_0 = 1e4
 n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-lrate_0 = 5e-2
-th_lrate_0 = 1e-3#Check if smaller can help differentiate more clusters
-s_gain = 1e-4
-win_l_0 = 15
+lrate_0 = 1e-1
+# th_lrate_0 = 5e-2#Check if smaller can help differentiate more clusters
+th_lrate_0 = 1e-1#Check if smaller can help differentiate more clusters
+# s_gain = 1e-1
+s_gain = 1e-1
+
+win_l_0 = 9
 
 th_decay_0=0.1
 th_size_0=250
+# th_size_0=30
 res_x_0 = 28
 res_y_0 = 28
 
@@ -484,18 +490,20 @@ Conv0 = Conv_Layer(n_clusters_0, tau_0, res_x_0, res_y_0, win_l_0, n_pol_0, lrat
                      s_gain, debug=True)
 
 #Dense Layer 2 data and parameters
-tau_1 = 1e5
+tau_1 = 1e1
 tau_1_fb = 1e1
-n_clusters_1 = 10
+# tau_1_fb = 1e4
+n_clusters_1 = 16
 # n_clusters_1 = 1
 # lrate_1 = 1e-2
 # th_lrate_1 = 1e-1
-lrate_1 = 5e-2
-th_lrate_1 = 1e-5#Check if smaller can help differentiate more clusters
-s_gain = 1e-4
+lrate_1 = 1e-1#it was -3
+th_lrate_1 = 1e-1#Check if smaller can help differentiate more clusters
+s_gain = 1e-1
 
 th_decay_1=0.1
 th_size_1=40000
+# th_size_1=300
 res_x_1 = 28
 res_y_1 = 28
 
@@ -504,10 +512,10 @@ Dense1 = Dense_Layer(n_clusters_1, tau_1, res_x_1, res_y_1, n_clusters_0, lrate_
                      s_gain, fb_signal=True, fb_tau=tau_1_fb, debug=True)
 
 #Class Layer 3 data and parameters
-tau_2 = 1e4#1e3 actually gave some nice features
+tau_2 = 1e1#1e3 actually gave some nice features
 tau_2_fb = 1e1
 n_clusters_2=10
-lrate_2 = 5e-3#If too high  you end up  with a single cluster same as lrate0 works well
+lrate_2 = 1e-4#If too high  you end up  with a single cluster same as lrate0 works well
 res_x_2 = 1
 res_y_2 = 1
 
@@ -543,8 +551,7 @@ n_batches = 60000//batch_size
 # n_batches = 1
 batch_i = 0
 ev_i = 0
-
-second_fase_i_epoch = 2
+second_fase_i_epoch = 1
 # second_fase_i_epoch = 0
 
 
@@ -553,16 +560,23 @@ f = open('Libs/cl_kernels/next_ev.cl', 'r')
 fstr = "".join(f.readlines())
 program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
 
-n_epochs=2
+n_epochs=1
 for epoch_i in range(n_epochs):
     rec=0
     for batch_i in range(n_batches):     
+    # for batch_i in range(2):     
         n_events_rec=np.zeros(batch_size, dtype=int)
+
         for i in range(batch_size):
             data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
             n_events_rec[i] = len(data_events[0])
             
         n_max_events = max(n_events_rec)
+        
+        S0_rec = np.zeros([batch_size, n_max_events,28,28,n_clusters_0])
+        dS0_rec = np.zeros([batch_size, n_max_events,28,28,n_clusters_0])
+        S1_rec = np.zeros([batch_size, n_max_events, n_clusters_1])
+        dS1_rec = np.zeros([batch_size, n_max_events,n_clusters_1])
         
         xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
         ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
@@ -614,21 +628,84 @@ for epoch_i in range(n_epochs):
             Conv0.infer(net_buffers, queue)
             Dense1.infer(net_buffers, queue)
             Class2.infer(net_buffers, queue)
-            Class2.learn(net_buffers, queue)
             
-            if epoch_i<second_fase_i_epoch:
-                Dense1.init_learn(net_buffers, queue)
-                Conv0.init_learn(net_buffers, queue)
+            if (batch_i%5):
+                Class2.learn(net_buffers, queue)
+                
+                if epoch_i<second_fase_i_epoch:
+                    Dense1.init_learn(net_buffers, queue)
+                    Conv0.init_learn(net_buffers, queue)
+    
+                else:
+                    Dense1.learn(net_buffers, queue)      
+                    Conv0.learn(net_buffers, queue)
+                                    
+            
+            # S0=Dense1.variables["output_S"]
+            # dS0=Dense1.variables["output_dS"]
 
-            else:
-                Dense1.learn(net_buffers, queue)      
-                Conv0.learn(net_buffers, queue)
-                                
-                    
+            # S0_bf=Dense1.buffers["output_S_bf"]
+            # dS0_bf=Dense1.buffers["output_dS_bf"]
+
+            # cl.enqueue_copy(queue, S0, S0_bf).wait()
+            # cl.enqueue_copy(queue, dS0, dS0_bf).wait()
+            
+            # closest0=Conv0.variables["closest_c"]
+            # closest_bf=Conv0.buffers["closest_c_bf"]
+            # cl.enqueue_copy(queue, closest0, closest_bf).wait()
+            
+            # for bt in range(batch_size):
+            #     S0_rec[bt, ev_i, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] = S0[bt]
+            #     dS0_rec[bt, ev_i, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] = dS0[bt]
+
+            # # print(S0)
+
+
+            # S1=Class2.variables["output_S"]
+            # dS1=Class2.variables["output_dS"]
+
+            # S1_bf=Class2.buffers["output_S_bf"]
+            # dS1_bf=Class2.buffers["output_dS_bf"]
+
+            # cl.enqueue_copy(queue, S1, S1_bf).wait()
+            # cl.enqueue_copy(queue, dS1, dS1_bf).wait()
+            
+            # closest1=Class2.variables["closest_c"]
+            # closest_bf=Class2.buffers["closest_c_bf"]
+            # cl.enqueue_copy(queue, closest1, closest_bf).wait()
+            
+            # for bt in range(batch_size):
+            #     S1_rec[bt,ev_i,closest1[bt]] = S1[bt]
+            #     dS1_rec[bt,ev_i,closest1[bt]] = dS1[bt]
+            
+            # print(dS1)
+
+            
+            # closest0=Conv0.variables["closest_c"]
+            # closest_bf=Conv0.buffers["closest_c_bf"]
+            # cl.enqueue_copy(queue, closest0, closest_bf).wait()
+
+                            
+            # thresholds0=Conv0.variables["thresholds"]
+            # thresholds_bf=Conv0.buffers["thresholds_bf"]
+            # cl.enqueue_copy(queue, thresholds0, thresholds_bf).wait()
+
+            # thresholds1=Dense1.variables["thresholds"]
+            # thresholds_bf=Dense1.buffers["thresholds_bf"]
+            # cl.enqueue_copy(queue, thresholds1, thresholds_bf).wait()
+
+            # print(thresholds0)
+            
             kernel=program.next_ev(queue, np.array([batch_size]), None, ev_i_bf)
         
         end_exec = time.time()
+        
+        if (batch_i%5):
+            print("LEARNING BATCH")
+        else:
+            print("VALIDATION BATCH")
 
+        # if (batch_i%5):
         Conv0.batch_update(queue)        
         Dense1.batch_update(queue)
         Class2.batch_update(queue)
@@ -639,7 +716,7 @@ for epoch_i in range(n_epochs):
         avg_processed_ev = np.mean(processed_ev / n_events_batch)
         avg_accuracy = np.mean(correct_ev / processed_ev)
         
-        print("TRAIN")
+        # print("TRAIN")
         print("Epoch: "+str(epoch_i)+" of "+str(n_epochs))
         print("Batch: "+str(batch_i)+" of "+str(n_batches))
         print("Processed rec "+str(rec)+" of "+str(len(train_labels))+" Label: "+str(np.unique(train_batch_labels[np.where(correct_ev!=0)])))
@@ -659,31 +736,49 @@ for epoch_i in range(n_epochs):
             thresholds=Dense1.variables["thresholds"]
             thresholds_bf=Dense1.buffers["thresholds_bf"]
             cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
-            
+
+#%%
+plt.figure()
+plt.imshow(S1_rec[0])            
             
 #%% COntrol variables
-dcentroids=Dense1.variables["dcentroids"]
-dcentroids_bf=Dense1.buffers["dcentroids_bf"]
-cl.enqueue_copy(queue, dcentroids, dcentroids_bf).wait()
-Dense1.variables["dcentroids"]=dcentroids
+
 
 distances=Conv0.variables["distances"]
 distances_bf=Conv0.buffers["distances_bf"]
 cl.enqueue_copy(queue, distances, distances_bf).wait()
 
-time_surface=Dense1.variables["time_surface"]
-time_surface_bf=Dense1.buffers["time_surface_bf"]
+time_surface=Conv0.variables["time_surface"]
+time_surface_bf=Conv0.buffers["time_surface_bf"]
 cl.enqueue_copy(queue, time_surface, time_surface_bf).wait()
 
 distances=Dense1.variables["distances"]
 distances_bf=Dense1.buffers["distances_bf"]
 cl.enqueue_copy(queue, distances, distances_bf).wait()
 
+dcentroids0=Conv0.variables["dcentroids"]
+dcentroids_bf=Conv0.buffers["dcentroids_bf"]
+cl.enqueue_copy(queue, dcentroids0, dcentroids_bf).wait()
+Conv0.variables["dcentroids"]=dcentroids0
+
 dcentroids=Class2.variables["dcentroids"]
 dcentroids_bf=Class2.buffers["dcentroids_bf"]
 cl.enqueue_copy(queue, dcentroids, dcentroids_bf).wait()
 Class2.variables["dcentroids"]=dcentroids
 
+
+closest0=Conv0.variables["closest_c"]
+closest_bf=Conv0.buffers["closest_c_bf"]
+cl.enqueue_copy(queue, closest0, closest_bf).wait()
+
+
+closest1=Dense1.variables["closest_c"]
+closest_bf=Dense1.buffers["closest_c_bf"]
+cl.enqueue_copy(queue, closest1, closest_bf).wait()
+
+closest2=Class2.variables["closest_c"]
+closest_bf=Class2.buffers["closest_c_bf"]
+cl.enqueue_copy(queue, closest2, closest_bf).wait()
 
 S0=Dense1.variables["output_S"]
 dS0=Dense1.variables["output_dS"]
@@ -704,6 +799,10 @@ dS1_bf=Class2.buffers["output_dS_bf"]
 cl.enqueue_copy(queue, S1, S1_bf).wait()
 cl.enqueue_copy(queue, dS1, dS1_bf).wait()
 
+for i in range(len(time_surface)):
+    plt.figure()
+    plt.title("ts recording: "+str(i))
+    plt.imshow(time_surface[i,:,:,0].transpose())
 #%% Print
 centroids0 = Conv0.variables["centroids"]
 centroids1 = Dense1.variables["centroids"]
@@ -713,12 +812,13 @@ centroids2 = Class2.variables["centroids"]
 for i in range(n_clusters_0):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(centroids0[0,i,:,:,0].transpose())
+    plt.imshow(centroids0[1,i,:,:,0].transpose())
     
 for i in range(n_clusters_1):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(np.concatenate(centroids1[0,i,:,:,:]))
+    plt.imshow(np.concatenate(centroids1[0,i,:,:,:].transpose()))
+    # plt.imshow(centroids1[0,i,:,:,30].transpose())
     
 for i in range(n_clusters_2):
     plt.figure()
@@ -749,18 +849,383 @@ centroids_1_bf=Dense1.buffers["centroids_bf"]
 centroids_2_bf=Class2.buffers["centroids_bf"]
 cl.enqueue_copy(queue, centroids_0_bf, Conv0_old_weights).wait()
 cl.enqueue_copy(queue, centroids_1_bf, Dense1_old_weights).wait()
-cl.enqueue_copy(queue, centroids_1_bf, Class2_old_weights).wait()
+cl.enqueue_copy(queue, centroids_2_bf, Class2_old_weights).wait()
 
 
-th_lrate_0 = 1e-5
+# th_lrate_0 = 1e-4
 
 
 
-Conv0.parameters["th_lrate"]=th_lrate_0
-th_lrate_bf=Conv0.buffers["th_lrate_bf"]
-cl.enqueue_copy(queue, th_lrate_bf, np.float32(th_lrate_0)).wait()
+# Conv0.parameters["th_lrate"]=th_lrate_0
+# th_lrate_bf=Conv0.buffers["th_lrate_bf"]
+# cl.enqueue_copy(queue, th_lrate_bf, np.float32(th_lrate_0)).wait()
 
-Dense1.parameters["th_lrate"]=th_lrate_0
-th_lrate_bf=Dense1.buffers["th_lrate_bf"]
-cl.enqueue_copy(queue, th_lrate_bf, np.float32(th_lrate_0)).wait()
+# Dense1.parameters["th_lrate"]=th_lrate_0
+# th_lrate_bf=Dense1.buffers["th_lrate_bf"]
+# cl.enqueue_copy(queue, th_lrate_bf, np.float32(th_lrate_0)).wait()
     
+#%% SAVE
+
+np.save("Conv0_old_weights_learnt",Conv0_old_weights)
+np.save("Dense1_old_weights_learnt",Dense1_old_weights)
+np.save("Class2_old_weights_learnt",Class2_old_weights)
+
+#%% LOAD
+
+Conv0_old_weights=np.load("Conv0_old_weights.npy")
+Dense1_old_weights=np.load("Dense1_old_weights.npy")
+Class2_old_weights=np.load("Class2_old_weights.npy")
+
+
+#%% Create the network two layers
+
+# Parameters
+# batch_size = 4 #too high and it might affect how fast it converges 128 it halts progression
+batch_size = 64 #too high and it might affect how fast it converges 128 it halts progression
+
+n_labels = 10
+n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
+
+
+#Dense Layer 1 data and parameters
+n_pol_0 = 1
+tau_0 = 1e5
+n_clusters_0 = 32
+# n_clusters_0 = 1
+# lrate_0 = 1e-2
+# th_lrate_0 = 1e-1
+lrate_0 = 5e-6
+# th_lrate_0 = 5e-2#Check if smaller can help differentiate more clusters
+th_lrate_0 = 5e-6#Check if smaller can help differentiate more clusters
+# s_gain = 1e-1
+s_gain = 1e2
+
+win_l_0 = 9
+
+th_decay_0=0.1
+th_size_0=250
+# th_size_0=30
+res_x_0 = 28
+res_y_0 = 28
+
+Conv0 = Conv_Layer(n_clusters_0, tau_0, res_x_0, res_y_0, win_l_0, n_pol_0, lrate_0,
+                     th_size_0, th_lrate_0, th_decay_0, ctx, batch_size,
+                     s_gain, debug=True)
+
+
+#Class Layer 3 data and parameters
+tau_2 = 1e5#1e3 actually gave some nice features
+tau_2_fb = 1
+n_clusters_2=10
+lrate_2 = 5e-6#If too high  you end up  with a single cluster same as lrate0 works well
+res_x_2 = 28
+res_y_2 = 28
+
+Class2 = Class_Layer(n_clusters_2, tau_2, res_x_2, res_y_2, n_clusters_0, lrate_2,
+                     ctx, batch_size, s_gain, fb_signal=True, fb_tau=tau_2_fb,
+                     debug=True)
+
+
+Conv0.buffers["input_S_bf"] = Class2.buffers["output_S_bf"]
+Conv0.buffers["input_dS_bf"] = Class2.buffers["output_dS_bf"]
+# Dense1.buffers["correct_response_bf"] = Class2.buffers["correct_response_bf"]
+
+Conv0.variables["input_S"] = Class2.variables["output_S"]
+Conv0.variables["input_dS"] = Class2.variables["output_dS"]
+
+# Dense1.variables["correct_response"] = Class2.variables["correct_response"]
+
+fevskip = np.zeros(batch_size, dtype=np.int32)
+bevskip = np.zeros(batch_size, dtype=np.int32)
+
+# fevskip for feed event skip, and bevskip for back event skip, 1=>true 0=>false
+fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
+bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
+
+#%% Initialize clusters
+
+rec = 0
+epoch_i=0
+n_batches = 60000//batch_size
+# n_batches = 1
+batch_i = 0
+ev_i = 0
+# second_fase_i_epoch = 1
+second_fase_i_epoch = 0
+
+
+
+f = open('Libs/cl_kernels/next_ev.cl', 'r')
+fstr = "".join(f.readlines())
+program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
+
+n_epochs=1
+for epoch_i in range(n_epochs):
+    rec=0
+    for batch_i in range(n_batches):     
+    # for batch_i in range(30):     
+        n_events_rec=np.zeros(batch_size, dtype=int)
+
+        for i in range(batch_size):
+            data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
+            n_events_rec[i] = len(data_events[0])
+            
+        n_max_events = max(n_events_rec)
+        
+        S0_rec = np.zeros([batch_size, n_max_events,28,28,n_clusters_0])
+        dS0_rec = np.zeros([batch_size, n_max_events,28,28,n_clusters_0])
+        
+        xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+        ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+        ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+        ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+        train_batch_labels = np.zeros([batch_size],dtype=np.int32)
+        n_events_batch = np.zeros([batch_size],dtype=np.int32)
+        
+        
+        for i in range(batch_size):
+            data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
+            n_events = len(data_events[0])
+            xs_np[i,:n_events] = data_events[0]
+            ys_np[i,:n_events] = data_events[1]
+            ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
+            ts_np[i,:n_events] = data_events[3]
+            train_batch_labels[i] = train_labels[rec+i]
+            n_events_batch[i] = n_events
+            
+        rec+=batch_size 
+        processed_ev = np.zeros([batch_size],dtype=np.int32)
+        correct_ev = np.zeros([batch_size],dtype=np.int32)
+        
+        # Network Buffers
+        xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
+        ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
+        ps_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ps_np)
+        ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
+        ev_i_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+        n_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
+        processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
+        correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+        batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=train_batch_labels)
+        fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
+        bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
+        
+        net_buffers = {"xs_bf" : xs_bf, "ys_bf" : ys_bf, "ps_bf" : ps_bf, 
+                       "ts_bf" : ts_bf, "ev_i_bf" : ev_i_bf, 
+                       "n_events_bf" : n_events_bf, 
+                       "processed_ev_bf" : processed_ev_bf, 
+                       "correct_ev_bf" : correct_ev_bf, 
+                       "batch_labels_bf" : batch_labels_bf, 
+                       "n_labels_bf" : Class2.buffers["n_clusters_bf"],
+                       "fevskip_bf" : fevskip_bf, "bevskip_bf" : bevskip_bf}
+        
+        start_exec = time.time()
+        for ev_i in range(n_max_events):
+            
+            Conv0.infer(net_buffers, queue)
+            Class2.infer(net_buffers, queue)
+            
+            if (batch_i%5):
+                Class2.learn(net_buffers, queue)
+                
+                if epoch_i<second_fase_i_epoch:
+                    Conv0.init_learn(net_buffers, queue)
+    
+                else:
+                    Conv0.learn(net_buffers, queue)
+                                    
+            
+
+
+            # S0=Class2.variables["output_S"]
+            # dS0=Class2.variables["output_dS"]
+
+            # S0_bf=Class2.buffers["output_S_bf"]
+            # dS0_bf=Class2.buffers["output_dS_bf"]
+
+            # cl.enqueue_copy(queue, S0, S0_bf).wait()
+            # cl.enqueue_copy(queue, dS0, dS0_bf).wait()
+            
+            # closest0=Conv0.variables["closest_c"]
+            # closest_bf=Conv0.buffers["closest_c_bf"]
+            # cl.enqueue_copy(queue, closest0, closest_bf).wait()
+            
+            # for bt in range(batch_size):
+            #     if ts_np[bt,ev_i]!=-1:
+            #         S0_rec[bt, ev_i, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] = S0[bt]
+            #         dS0_rec[bt, ev_i, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] = dS0[bt]
+            
+            # print(dS1)
+
+            
+            # closest0=Conv0.variables["closest_c"]
+            # closest_bf=Conv0.buffers["closest_c_bf"]
+            # cl.enqueue_copy(queue, closest0, closest_bf).wait()
+
+                            
+            # thresholds0=Conv0.variables["thresholds"]
+            # thresholds_bf=Conv0.buffers["thresholds_bf"]
+            # cl.enqueue_copy(queue, thresholds0, thresholds_bf).wait()
+
+
+            # print(thresholds0)
+            
+            kernel=program.next_ev(queue, np.array([batch_size]), None, ev_i_bf)
+        
+        end_exec = time.time()
+        
+        if (batch_i%5):
+            print("LEARNING BATCH")
+        else:
+            print("VALIDATION BATCH")
+
+        # if (batch_i%5):
+        Conv0.batch_update(queue)        
+        Class2.batch_update(queue)
+        
+        processed_ev = Class2.variables["processed_ev"]
+        correct_ev = Class2.variables["correct_ev"]
+        
+        avg_processed_ev = np.mean(processed_ev / n_events_batch)
+        avg_accuracy = np.mean(correct_ev / processed_ev)
+        
+        # print("TRAIN")
+        print("Epoch: "+str(epoch_i)+" of "+str(n_epochs))
+        print("Batch: "+str(batch_i)+" of "+str(n_batches))
+        print("Processed rec "+str(rec)+" of "+str(len(train_labels))+" Label: "+str(np.unique(train_batch_labels[np.where(correct_ev!=0)])))
+        print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
+        print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
+
+        Conv0.batch_flush(queue)        
+        Class2.batch_flush(queue)
+        
+        if epoch_i<second_fase_i_epoch:
+            Conv0.variables["thresholds"][:]=th_size_0
+            thresholds=Conv0.variables["thresholds"]
+            thresholds_bf=Conv0.buffers["thresholds_bf"]
+            cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
+
+
+#%%
+plt.figure()
+res = np.sum(dS0_rec[:,:,:,:,1], axis=(0,1)).transpose()
+plt.imshow(res)            
+            
+#%% COntrol variables
+
+
+distances=Conv0.variables["distances"]
+distances_bf=Conv0.buffers["distances_bf"]
+cl.enqueue_copy(queue, distances, distances_bf).wait()
+
+time_surface=Conv0.variables["time_surface"]
+time_surface_bf=Conv0.buffers["time_surface_bf"]
+cl.enqueue_copy(queue, time_surface, time_surface_bf).wait()
+
+
+dcentroids0=Conv0.variables["dcentroids"]
+dcentroids_bf=Conv0.buffers["dcentroids_bf"]
+cl.enqueue_copy(queue, dcentroids0, dcentroids_bf).wait()
+Conv0.variables["dcentroids"]=dcentroids0
+
+dcentroids=Class2.variables["dcentroids"]
+dcentroids_bf=Class2.buffers["dcentroids_bf"]
+cl.enqueue_copy(queue, dcentroids, dcentroids_bf).wait()
+Class2.variables["dcentroids"]=dcentroids
+
+
+closest0=Conv0.variables["closest_c"]
+closest_bf=Conv0.buffers["closest_c_bf"]
+cl.enqueue_copy(queue, closest0, closest_bf).wait()
+
+
+
+
+closest2=Class2.variables["closest_c"]
+closest_bf=Class2.buffers["closest_c_bf"]
+cl.enqueue_copy(queue, closest2, closest_bf).wait()
+
+
+S0=Class2.variables["output_S"]
+dS0=Class2.variables["output_dS"]
+
+S0_bf=Class2.buffers["output_S_bf"]
+dS0_bf=Class2.buffers["output_dS_bf"]
+
+cl.enqueue_copy(queue, S0, S0_bf).wait()
+cl.enqueue_copy(queue, dS0, dS0_bf).wait()
+
+for i in range(len(time_surface)):
+    plt.figure()
+    plt.title("ts recording: "+str(i))
+    plt.imshow(time_surface[i,:,:,0].transpose())
+#%% Print
+centroids0 = Conv0.variables["centroids"]
+centroids2 = Class2.variables["centroids"]
+
+
+for i in range(n_clusters_0):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(centroids0[1,i,:,:,0].transpose())
+
+y = np.arange(14,28*n_clusters_0,28)
+lb = np.arange(0,n_clusters_0)
+
+for i in range(n_clusters_2):
+    plt.figure()
+    plt.title("cluster: "+str(i))
+    plt.imshow(np.concatenate(centroids2[0,i,:,:,:].transpose()))
+    plt.yticks(y, lb, rotation='vertical')
+
+
+#%% copy weights and prepare for phase 2 
+    
+# Conv0_old_weights = Conv0.variables["centroids"].copy()
+# Class2_old_weights = Class2.variables["centroids"].copy()
+
+               
+# Dense0.variables["thresholds"][:]=230
+# thresholds=Dense0.variables["thresholds"]
+# thresholds_bf=Dense0.buffers["thresholds_bf"]
+# cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
+
+
+# Conv0.variables["centroids"] = Conv0_old_weights.copy() 
+# Dense1.variables["centroids"] = Dense1_old_weights.copy() 
+# Class2.variables["centroids"] = Class2_old_weights.copy() 
+
+
+# centroids_0_bf=Conv0.buffers["centroids_bf"]
+# centroids_1_bf=Dense1.buffers["centroids_bf"]
+# centroids_2_bf=Class2.buffers["centroids_bf"]
+# cl.enqueue_copy(queue, centroids_0_bf, Conv0_old_weights).wait()
+# cl.enqueue_copy(queue, centroids_1_bf, Dense1_old_weights).wait()
+# cl.enqueue_copy(queue, centroids_2_bf, Class2_old_weights).wait()
+
+
+s_gain = 1e-8
+
+
+
+Conv0.parameters["s_gain"]=s_gain
+s_gain_bf=Conv0.buffers["s_gain_bf"]
+cl.enqueue_copy(queue, s_gain_bf, np.float32(s_gain)).wait()
+
+Class2.parameters["s_gain"]=s_gain
+s_gain_bf=Class2.buffers["s_gain_bf"]
+cl.enqueue_copy(queue, s_gain_bf, np.float32(s_gain)).wait()
+    
+#%% SAVE
+
+np.save("Conv0_old_weights_learnt_2",Conv0_old_weights)
+np.save("Conv0_old_th_learnt_2",Conv0.variables["thresholds"])
+np.save("Class2_old_weights_learnt_2",Class2_old_weights)
+
+
+
+#%% LOAD
+
+Conv0_old_weights=np.load("Conv0_old_weights.npy")
+Dense1_old_weights=np.load("Dense1_old_weights.npy")
+Class2_old_weights=np.load("Class2_old_weights.npy")

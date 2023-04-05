@@ -128,7 +128,7 @@ class Conv_Layer:
         self.__ts_prec = ts_prec 
         
         centroids = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=w_prec)
-        centroids[:] = np.random.rand(n_clusters, win_l, win_l, n_pol)
+        centroids[:] = np.random.rand(n_clusters, win_l, win_l, n_pol)*0.0001
         
         #Used to store the dstep in direction of the new centroid position
         dcentroids = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=w_prec)
@@ -472,10 +472,10 @@ class Conv_Layer:
             queue : OpenCL queue                          
             
         """
-        self.queue_context_update(ext_buffer, queue)
         self.queue_time_surface_generation(ext_buffer, queue)
         self.queue_partial_distances(ext_buffer, queue)
         self.queue_reduction_distances(ext_buffer, queue)
+        self.queue_context_update(ext_buffer, queue)
         self.queue_infer_end(ext_buffer, queue)
         
 
