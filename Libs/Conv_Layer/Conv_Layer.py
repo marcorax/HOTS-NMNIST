@@ -132,12 +132,15 @@ class Conv_Layer:
         
         #Used to store the dstep in direction of the new centroid position
         dcentroids = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=w_prec)
+        centroids_update = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=w_prec)
         
         # Zeropadding for conv 
         time_context = np.zeros([batch_size, res_x+win_l-1, res_y+win_l-1, n_pol],dtype=np.int32) #time context matrix        
         time_context_mask = np.zeros([batch_size, res_x+win_l-1, res_y+win_l-1, n_pol],dtype=np.int32)
     
         thresholds = np.zeros([batch_size,n_clusters], dtype=w_prec)+th_size
+        thresholds_update = np.zeros([batch_size, n_clusters],dtype=w_prec)
+
         
         closest_c = np.zeros([batch_size],dtype=np.int32)
         distances = np.zeros([batch_size,n_clusters],dtype=dist_prec)  
@@ -163,11 +166,13 @@ class Conv_Layer:
         
         var_dict = {"centroids" : centroids,
                     "dcentroids" : dcentroids,
+                    "centroids_update" : centroids_update,
                     "time_context" : time_context,
                     "time_context_mask" : time_context_mask,
                     "fb_time_context" : fb_time_context,
                     "fb_time_context_mask" : fb_time_context_mask,
                     "thresholds" : thresholds,
+                    "thresholds_update" : thresholds_update,
                     "closest_c" : closest_c,
                     "distances" : distances, 
                     "partial_sum" : partial_sum,
@@ -234,9 +239,11 @@ class Conv_Layer:
         
         centroids  = self.variables["centroids"]
         dcentroids  = self.variables["dcentroids"]
+        centroids_update  = self.variables["centroids_update"]
         time_context  = self.variables["time_context"]
         time_context_mask  = self.variables["time_context_mask"]
         thresholds  = self.variables["thresholds"]
+        thresholds_update = self.variables["thresholds_update"]
         closest_c  = self.variables["closest_c"]
         distances  = self.variables["distances"]
         partial_sum  = self.variables["partial_sum"]
@@ -250,9 +257,11 @@ class Conv_Layer:
 
         centroids_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=centroids) 
         dcentroids_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dcentroids) 
+        centroids_update_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=centroids_update)    
         time_context_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context) 
         time_context_mask_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_mask) 
         thresholds_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=thresholds) 
+        thresholds_update_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=thresholds_update) 
         closest_c_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_c) 
         distances_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=distances) 
         partial_sum_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=partial_sum) 
@@ -274,9 +283,11 @@ class Conv_Layer:
         
         self.buffers["centroids_bf"] = centroids_bf
         self.buffers["dcentroids_bf"] = dcentroids_bf
+        self.buffers["centroids_update_bf"] = centroids_update_bf
         self.buffers["time_context_bf"] = time_context_bf
         self.buffers["time_context_mask_bf"] = time_context_mask_bf
         self.buffers["thresholds_bf"] = thresholds_bf
+        self.buffers["thresholds_update_bf"] = thresholds_update_bf
         self.buffers["closest_c_bf"] = closest_c_bf
         self.buffers["distances_bf"] = distances_bf
         self.buffers["partial_sum_bf"] = partial_sum_bf
@@ -325,8 +336,14 @@ class Conv_Layer:
         
         time_context = np.zeros([batch_size, res_x+win_l-1, res_y+win_l-1, n_pol],dtype=np.int32) #time context matrix        
         time_context_mask = np.zeros([batch_size, res_x+win_l-1, res_y+win_l-1, n_pol],dtype=np.int32)
+        centroids_update = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=self.__w_prec)
+        thresholds_update = np.zeros([batch_size, n_clusters],dtype=self.__w_prec)
+        
+        
         self.variables["time_context"] = time_context
         self.variables["time_context_mask"] = time_context_mask
+        self.variables["centroids_update"] = centroids_update
+        self.variables["thresholds_update"] = thresholds_update
         
               
         if self.fb_signal:
@@ -344,13 +361,54 @@ class Conv_Layer:
             self.buffers["fb_time_context_mask_bf"] = fb_time_context_mask_bf
         
         time_context_bf = self.buffers["time_context_bf"]
-        time_context_mask_bf = self.buffers["time_context_mask_bf"]            
+        time_context_mask_bf = self.buffers["time_context_mask_bf"]   
+        centroids_update_bf = self.buffers["centroids_update_bf"]   
+        thresholds_update_bf = self.buffers["thresholds_update_bf"]                                                                                     
         cl.enqueue_copy(queue, time_context_bf, time_context) 
-        cl.enqueue_copy(queue, time_context_mask_bf, time_context_mask).wait()          
+        cl.enqueue_copy(queue, time_context_mask_bf, time_context_mask)   
+        cl.enqueue_copy(queue, centroids_update_bf, centroids_update)    
+        cl.enqueue_copy(queue, thresholds_update_bf, thresholds_update).wait()                                  
         self.buffers["time_context_bf"] = time_context_bf
         self.buffers["time_context_mask_bf"] = time_context_mask_bf
+        self.buffers["centroids_update_bf"] = centroids_update_bf
+
 
     def batch_update(self, queue):
+        """
+        This method is used to update variables after a batch run.
+        
+        Parameters:
+            
+            queue : OpenCL queue                          
+
+        """
+        
+        centroids=self.variables["centroids"]
+        centroids_update=self.variables["centroids_update"]
+        thresholds=self.variables["thresholds"]
+        thresholds_update=self.variables["thresholds_update"]
+
+        centroids_bf = self.buffers["centroids_bf"]
+        centroids_update_bf=self.buffers["centroids_update_bf"]
+        thresholds_bf = self.buffers["thresholds_bf"]
+        thresholds_update_bf = self.buffers["thresholds_update_bf"]
+
+        
+        cl.enqueue_copy(queue, centroids, centroids_bf)
+        cl.enqueue_copy(queue, centroids_update, centroids_update_bf)
+        cl.enqueue_copy(queue, thresholds, thresholds_bf)
+        cl.enqueue_copy(queue, thresholds_update, thresholds_update_bf).wait()
+    
+        centroids[:] += np.mean(centroids_update, axis=0)
+        thresholds[:] += np.mean(thresholds_update, axis=0)
+
+        cl.enqueue_copy(queue, centroids_bf, centroids)
+        cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()    
+
+        self.variables["centroids"]=centroids
+        self.variables["thresholds"]=thresholds
+
+    def batch_update_online(self, queue):
         """
         This method is used to update variables after a batch run.
         
@@ -442,6 +500,9 @@ class Conv_Layer:
         
         programtxt = programtxt + fb_context_update + fb_ts_gen + fb_end
         
+        dr = "Libs/Conv_Layer/init_cl/"
+        f = open(dr+"init_ts_gen.cl", 'r')
+        init_ts_gen = "".join(f.readlines())
                 
         dr = "Libs/Conv_Layer/init_cl/"
         f = open(dr+"init_infer_end.cl", 'r')
@@ -455,7 +516,7 @@ class Conv_Layer:
         f = open(dr+"init_th_update.cl", 'r')
         init_th_update = "".join(f.readlines())
 
-        programtxt = programtxt + init_infer_end + init_w_update + init_th_update
+        programtxt = programtxt + init_ts_gen + init_infer_end + init_w_update + init_th_update
                 
         self.program=cl.Program(ctx, programtxt).build(options='-cl-std=CL2.0')
         
@@ -472,10 +533,10 @@ class Conv_Layer:
             queue : OpenCL queue                          
             
         """
+        self.queue_context_update(ext_buffer, queue)
         self.queue_time_surface_generation(ext_buffer, queue)
         self.queue_partial_distances(ext_buffer, queue)
         self.queue_reduction_distances(ext_buffer, queue)
-        self.queue_context_update(ext_buffer, queue)
         self.queue_infer_end(ext_buffer, queue)
         
 
@@ -503,7 +564,7 @@ class Conv_Layer:
         # self.queue_experimental_thresholds_reduce(ext_buffer, queue)
         # self.queue_experimental_weight_reduce(ext_buffer, queue)
 
-    def init_infer(self, ext_buffer, queue):
+    def init_infer(self, ext_buffer, queue, time_surface_bf):
             """
             Method to queue the kernels for infering.
             
@@ -516,11 +577,9 @@ class Conv_Layer:
                 queue : OpenCL queue                          
                 
             """
+            self.queue_init_time_surface_generation(ext_buffer, queue, time_surface_bf)
             self.queue_context_update(ext_buffer, queue)
-            self.queue_time_surface_generation(ext_buffer, queue)
-            self.queue_partial_distances(ext_buffer, queue)
-            self.queue_reduction_distances(ext_buffer, queue)
-            self.queue_infer_end(ext_buffer, queue)      
+            
 
     def init_learn(self, ext_buffer, queue):
         """
@@ -627,6 +686,49 @@ class Conv_Layer:
                             win_l_bf, tau_bf, n_pol_bf, n_clusters_bf, ev_i_bf,
                             n_events_bf, time_context_bf, time_context_mask_bf,
                             time_surface_bf, win_lkt_bf, fevskip_bf)        
+
+    def queue_init_time_surface_generation(self, ext_buffer, queue, time_surface_bf):
+        """
+        Method to queue the ts_gen kernel
+        
+        Parameters:
+            
+            ext_buffer : dictionary containing the required buffers for kernel
+                         execution that could not being generated during the 
+                         layer initialization.
+            
+            queue : OpenCL queue                          
+            
+        """
+        
+        xs_bf = ext_buffer["xs_bf"]
+        ys_bf = ext_buffer["ys_bf"]
+        ps_bf = ext_buffer["ps_bf"]
+        ts_bf = ext_buffer["ts_bf"]        
+        res_x_bf = self.buffers["res_x_bf"]
+        res_y_bf = self.buffers["res_y_bf"]
+        win_l_bf = self.buffers["win_l_bf"]
+        tau_bf = self.buffers["tau_bf"]
+        n_pol_bf = self.buffers["n_pol_bf"]
+        n_clusters_bf = self.buffers["n_clusters_bf"]
+        ev_i_bf = ext_buffer["ev_i_bf"] 
+        n_events_bf = ext_buffer["n_events_bf"]      
+        time_context_bf = self.buffers["time_context_bf"]
+        time_context_mask_bf = self.buffers["time_context_mask_bf"]       
+        win_lkt_bf = self.buffers["win_lkt_bf"]
+        fevskip_bf = ext_buffer["fevskip_bf"] 
+        
+        batch_size = self.parameters["batch_size"]        
+
+        global_space = (batch_size, self.__loc_ts_size)
+        local_space = None
+        
+        self.program.init_ts_gen(queue, global_space, local_space, xs_bf,
+                            ys_bf, ps_bf, ts_bf, res_x_bf, res_y_bf,
+                            win_l_bf, tau_bf, n_pol_bf, n_clusters_bf, ev_i_bf,
+                            n_events_bf, time_context_bf, time_context_mask_bf,
+                            time_surface_bf, win_lkt_bf, fevskip_bf)        
+
 
     def queue_partial_distances(self, ext_buffer, queue):
         """
@@ -795,23 +897,27 @@ class Conv_Layer:
         ev_i_bf = ext_buffer["ev_i_bf"] 
         n_events_bf = ext_buffer["n_events_bf"]      
         centroids_bf = self.buffers["centroids_bf"]
+        centroids_update_bf = self.buffers["centroids_update_bf"]
         closest_c_bf = self.buffers["closest_c_bf"]
         lrate_bf = self.buffers["lrate_bf"] 
         S_bf = self.buffers["input_S_bf"] 
         s_gain_bf = self.buffers["s_gain_bf"]
         dS_bf = self.buffers["input_dS_bf"] 
+        distances_bf = self.buffers["distances_bf"]
+        thresholds_bf = self.buffers["thresholds_bf"]
         dcentroids_bf = self.buffers["dcentroids_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
         
         batch_size = self.parameters["batch_size"]        
 
-        global_space = (batch_size, self.__loc_ts_size)
-        local_space = (1, self.__loc_ts_size)
+        global_space = (batch_size, self.__loc_ts_size, self.__loc_cl_size)
+        local_space = (1, self.__loc_ts_size, 1)
         
         self.program.w_update(queue, global_space, local_space, ts_bf,
                               win_l_bf, n_pol_bf, n_clusters_bf,
-                              ev_i_bf, n_events_bf, centroids_bf, closest_c_bf,
-                              lrate_bf, S_bf, s_gain_bf, dS_bf, dcentroids_bf, bevskip_bf)
+                              ev_i_bf, n_events_bf, centroids_update_bf, closest_c_bf,
+                              lrate_bf, S_bf, s_gain_bf, dS_bf, distances_bf,
+                              thresholds_bf, dcentroids_bf, bevskip_bf)
         
     def queue_init_weight_update(self, ext_buffer, queue):
         """
@@ -916,6 +1022,7 @@ class Conv_Layer:
         dS_bf = self.buffers["input_dS_bf"] 
         distances_bf = self.buffers["distances_bf"]
         thresholds_bf = self.buffers["thresholds_bf"]
+        thresholds_update_bf = self.buffers["thresholds_update_bf"]
         th_decay_bf = self.buffers["th_decay_bf"]
         bevskip_bf = ext_buffer["bevskip_bf"] 
         
@@ -927,7 +1034,8 @@ class Conv_Layer:
         self.program.th_update(queue, global_space, local_space, ts_bf,
                                n_clusters_bf, ev_i_bf, n_events_bf, th_lrate_bf,
                                closest_c_bf, S_bf, s_gain_bf, dS_bf, distances_bf,
-                               thresholds_bf, th_decay_bf, bevskip_bf)
+                               thresholds_bf,
+                               thresholds_update_bf, th_decay_bf, bevskip_bf)
         
     def queue_feedback_context_update(self, ext_buffer, queue):
         """

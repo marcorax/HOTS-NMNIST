@@ -145,7 +145,8 @@ class Class_Layer:
         
         #Used to store the dstep in direction of the new centroid position
         dcentroids = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=w_prec)
-        
+        centroids_update = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=w_prec)
+
         time_context = np.zeros([batch_size, res_x, res_y, n_pol],dtype=np.int32) #time context matrix        
         time_context_mask = np.zeros([batch_size, res_x, res_y, n_pol],dtype=np.int32)
         
@@ -177,6 +178,7 @@ class Class_Layer:
         
         var_dict = {"centroids" : centroids,
                     "dcentroids" : dcentroids,
+                    "centroids_update" : centroids_update,
                     "time_context" : time_context,
                     "time_context_mask" : time_context_mask,
                     "fb_time_context" : fb_time_context,
@@ -236,6 +238,7 @@ class Class_Layer:
         
         centroids  = self.variables["centroids"]
         dcentroids  = self.variables["dcentroids"]
+        centroids_update  = self.variables["centroids_update"]
         time_context  = self.variables["time_context"]
         time_context_mask  = self.variables["time_context_mask"]
         closest_c  = self.variables["closest_c"]
@@ -254,6 +257,7 @@ class Class_Layer:
 
         centroids_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=centroids) 
         dcentroids_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=dcentroids) 
+        centroids_update_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=centroids_update) 
         time_context_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context) 
         time_context_mask_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_context_mask) 
         closest_c_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=closest_c) 
@@ -283,6 +287,7 @@ class Class_Layer:
         
         self.buffers["centroids_bf"] = centroids_bf
         self.buffers["dcentroids_bf"] = dcentroids_bf
+        self.buffers["centroids_update_bf"] = centroids_update_bf
         self.buffers["time_context_bf"] = time_context_bf
         self.buffers["time_context_mask_bf"] = time_context_mask_bf
         self.buffers["closest_c_bf"] = closest_c_bf
@@ -336,10 +341,12 @@ class Class_Layer:
         time_context_mask = np.zeros([batch_size, res_x, res_y, n_pol],dtype=np.int32)
         processed_ev = np.zeros([batch_size],dtype=np.int32)
         correct_ev = np.zeros([batch_size],dtype=np.int32)
+        centroids_update = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=self.__w_prec)
         self.variables["time_context"] = time_context
         self.variables["time_context_mask"] = time_context_mask
         self.variables["processed_ev"] = processed_ev
         self.variables["correct_ev"] = correct_ev
+        self.variables["centroids_update"] = centroids_update
         
               
         if self.fb_signal:
@@ -363,17 +370,54 @@ class Class_Layer:
         time_context_bf = self.buffers["time_context_bf"]
         time_context_mask_bf = self.buffers["time_context_mask_bf"]    
         processed_ev_bf = self.buffers["processed_ev_bf"]            
-        correct_ev_bf = self.buffers["correct_ev_bf"]                    
+        correct_ev_bf = self.buffers["correct_ev_bf"]     
+        centroids_update_bf = self.buffers["centroids_update_bf"]                                   
         cl.enqueue_copy(queue, time_context_bf, time_context) 
         cl.enqueue_copy(queue, time_context_mask_bf, time_context_mask) 
-        cl.enqueue_copy(queue, processed_ev_bf, processed_ev)          
+        cl.enqueue_copy(queue, processed_ev_bf, processed_ev)      
         cl.enqueue_copy(queue, correct_ev_bf, correct_ev).wait()                   
+        cl.enqueue_copy(queue, centroids_update_bf, centroids_update).wait()                   
         self.buffers["time_context_bf"] = time_context_bf
         self.buffers["time_context_mask_bf"] = time_context_mask_bf
         self.buffers["processed_ev_bf"] = processed_ev_bf
         self.buffers["correct_ev_bf"] = correct_ev_bf
+        self.buffers["centroids_update_bf"] = centroids_update_bf
+
              
     def batch_update(self, queue):
+        """
+        This method is used to update variables after a batch run.
+        
+        Parameters:
+            
+            queue : OpenCL queue                          
+
+        """
+        
+        centroids=self.variables["centroids"]
+        centroids_update=self.variables["centroids_update"]
+        processed_ev = self.variables["processed_ev"]
+        correct_ev = self.variables["correct_ev"]
+
+        centroids_bf = self.buffers["centroids_bf"]
+        centroids_update_bf=self.buffers["centroids_update_bf"]
+        processed_ev_bf = self.buffers["processed_ev_bf"]
+        correct_ev_bf = self.buffers["correct_ev_bf"]
+        
+       
+        cl.enqueue_copy(queue, centroids, centroids_bf).wait()
+        cl.enqueue_copy(queue, centroids_update, centroids_update_bf).wait()
+        cl.enqueue_copy(queue, processed_ev, processed_ev_bf).wait()
+        cl.enqueue_copy(queue, correct_ev, correct_ev_bf).wait()
+    
+        centroids[:] += np.mean(centroids_update, axis=0)
+        cl.enqueue_copy(queue, centroids_bf, centroids).wait()
+        
+        self.variables["centroids"]=centroids
+        self.variables["processed_ev"]=processed_ev
+        self.variables["correct_ev"]=correct_ev
+
+    def batch_update_online(self, queue):
         """
         This method is used to update variables after a batch run.
         
@@ -401,7 +445,6 @@ class Class_Layer:
         self.variables["centroids"]=centroids
         self.variables["processed_ev"]=processed_ev
         self.variables["correct_ev"]=correct_ev
-
 
         
     def host_copy(self):
@@ -471,6 +514,10 @@ class Class_Layer:
         programtxt = programtxt + w_reduce
         
         dr = "Libs/Class_Layer/init_cl/"
+        f = open(dr+"init_ts_gen.cl", 'r')
+        init_ts_gen = "".join(f.readlines())
+        
+        dr = "Libs/Class_Layer/init_cl/"
         f = open(dr+"init_infer_end.cl", 'r')
         init_infer_end = "".join(f.readlines())
 
@@ -478,7 +525,7 @@ class Class_Layer:
         f = open(dr+"init_w_update.cl", 'r')
         init_w_update = "".join(f.readlines())
 
-        programtxt = programtxt + init_infer_end + init_w_update
+        programtxt = programtxt + init_ts_gen + init_infer_end + init_w_update
                 
         self.program=cl.Program(ctx, programtxt).build(options='-cl-std=CL2.0')
         
@@ -523,7 +570,7 @@ class Class_Layer:
         self.queue_weight_update(ext_buffer, queue)
         # self.queue_experimental_weight_reduce(ext_buffer, queue)
         
-    def init_infer(self, ext_buffer, queue):
+    def init_infer(self, ext_buffer, queue, time_surface_bf):
             """
             Method to queue the kernels for infering.
             
@@ -537,11 +584,7 @@ class Class_Layer:
                 
             """
             self.queue_context_update(ext_buffer, queue)
-            self.queue_time_surface_generation(ext_buffer, queue)
-            self.queue_partial_distances(ext_buffer, queue)
-            self.queue_reduction_distances(ext_buffer, queue)
-            # self.queue_init_infer_end(ext_buffer, queue)
-            self.queue_infer_end(ext_buffer, queue)
+            self.queue_init_time_surface_generation(ext_buffer, queue, time_surface_bf)
 
             
     def init_learn(self, ext_buffer, queue):
@@ -644,7 +687,47 @@ class Class_Layer:
                             ys_bf, ps_bf, ts_bf, res_x_bf, res_y_bf,
                             tau_bf, n_pol_bf, n_clusters_bf, ev_i_bf,
                             n_events_bf, time_context_bf, time_context_mask_bf,
-                            time_surface_bf, fevskip_bf)        
+                            time_surface_bf, fevskip_bf)   
+        
+    def queue_init_time_surface_generation(self, ext_buffer, queue, time_surface_bf):
+        """
+        Method to queue the ts_gen kernel
+        
+        Parameters:
+            
+            ext_buffer : dictionary containing the required buffers for kernel
+                         execution that could not being generated during the 
+                         layer initialization.
+            
+            queue : OpenCL queue                          
+            
+        """
+        
+        xs_bf = ext_buffer["xs_bf"]
+        ys_bf = ext_buffer["ys_bf"]
+        ps_bf = ext_buffer["ps_bf"]
+        ts_bf = ext_buffer["ts_bf"]        
+        res_x_bf = self.buffers["res_x_bf"]
+        res_y_bf = self.buffers["res_y_bf"]
+        tau_bf = self.buffers["tau_bf"]
+        n_pol_bf = self.buffers["n_pol_bf"]
+        n_clusters_bf = self.buffers["n_clusters_bf"]
+        ev_i_bf = ext_buffer["ev_i_bf"] 
+        n_events_bf = ext_buffer["n_events_bf"]      
+        time_context_bf = self.buffers["time_context_bf"]
+        time_context_mask_bf = self.buffers["time_context_mask_bf"]       
+        fevskip_bf = ext_buffer["fevskip_bf"] 
+        
+        batch_size = self.parameters["batch_size"]        
+
+        global_space = (batch_size, self.__loc_ts_size)
+        local_space = None
+        
+        self.program.init_ts_gen(queue, global_space, local_space, xs_bf,
+                            ys_bf, ps_bf, ts_bf, res_x_bf, res_y_bf,
+                            tau_bf, n_pol_bf, n_clusters_bf, ev_i_bf,
+                            n_events_bf, time_context_bf, time_context_mask_bf,
+                            time_surface_bf, fevskip_bf)    
 
     def queue_partial_distances(self, ext_buffer, queue):
         """
@@ -818,6 +901,7 @@ class Class_Layer:
         ev_i_bf = ext_buffer["ev_i_bf"] 
         n_events_bf = ext_buffer["n_events_bf"]      
         centroids_bf = self.buffers["centroids_bf"]
+        centroids_update_bf = self.buffers["centroids_update_bf"]
         closest_c_bf = self.buffers["closest_c_bf"]
         lrate_bf = self.buffers["lrate_bf"] 
         S_bf = self.buffers["output_S_bf"] 
@@ -833,7 +917,7 @@ class Class_Layer:
         
         self.program.w_update(queue, global_space, local_space, ts_bf,
                               res_x_bf, res_y_bf, n_pol_bf, n_clusters_bf,
-                              ev_i_bf, n_events_bf, centroids_bf, closest_c_bf,
+                              ev_i_bf, n_events_bf, centroids_update_bf, closest_c_bf,
                               lrate_bf, S_bf, s_gain_bf, dS_bf, dcentroids_bf, bevskip_bf)
 
     def queue_init_weight_update(self, ext_buffer, queue):

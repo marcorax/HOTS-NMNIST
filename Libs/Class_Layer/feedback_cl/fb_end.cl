@@ -39,6 +39,10 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
 
         if (get_local_id(1)==0){
         
+            if (correct_response[i_file]==0){
+                tmp_S = -tmp_S;  
+            }                        
+        
             if(ev_i==0){
                 dS[i_file] = tmp_S;
             }
@@ -47,7 +51,6 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
             }
             
             if (correct_response[i_file]==0){
-                tmp_S = -tmp_S;  
                 dS[i_file] = -dS[i_file];          
             }
                     

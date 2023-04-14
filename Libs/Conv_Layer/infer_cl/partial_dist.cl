@@ -66,9 +66,9 @@ __kernel void partial_dist(__global int *ts, __global int *win_l_b,
                                 loc_idx;
             
                 //Euclidean is causing a good chunk of approx errors, moving to L1 
-                    elem_distance = fabs(weights[lin_idx]-ts_value);
-//                 elem_distance = (weights[lin_idx]-ts_value)*
-//                                 (weights[lin_idx]-ts_value);
+//                     elem_distance = fabs(weights[lin_idx]-ts_value);
+                elem_distance = (weights[lin_idx]-ts_value)*
+                                (weights[lin_idx]-ts_value);
 
 
                 //save the weight change for the fb. to save computation

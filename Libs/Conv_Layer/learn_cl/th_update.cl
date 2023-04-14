@@ -9,6 +9,7 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
                         __global float *lrate_b, __global int *closest,
                         __global float *S, __global float *s_gain_b, __global float *dS,
                         __global double *distances,  __global double *th,
+                        __global double *th_update,
                         __global float *tau_th_b,   __global int *bevskip)
 {
     int i_file = (int) get_global_id(0);
@@ -19,8 +20,9 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
     int ev_i=*ev_i_b;
     int n_events=*n_events_b;    
     float lrate=*lrate_b;
-    float tau_th = *tau_th_b;
-    
+    float tau_coeff = *tau_th_b;
+    double tau_th;
+     
     float s_gain = *s_gain_b;
     
     int lin_idx;
@@ -35,21 +37,21 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
         if (cluster_i<n_clusters){    
             lin_idx = idx2d(i_file, nfiles, cluster_i, n_clusters);
             
-            tau_th=tau_th*th[lin_idx];
+            tau_th=fabs(tau_coeff*th[lin_idx]);
            
             if(cluster_i==closest[i_file]){                         
                       
-                  th[lin_idx] = th[lin_idx] + th[lin_idx]*(
+                  th_update[lin_idx] = th_update[lin_idx] + th[lin_idx]*(
 //                  th[lin_idx] = th[lin_idx] + (
-                                (double)lrate*(double)dS[i_file]*(double)exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th)+
-                                (double)s_gain*(double)lrate*S[i_file]*(double)exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th));
+                                (double)lrate*(double)dS[i_file]*(double)exp((distances[lin_idx]-th[lin_idx])/tau_th)+
+                                (double)s_gain*(double)lrate*S[i_file]*(double)exp((distances[lin_idx]-th[lin_idx])/tau_th));
             }
             else if ((distances[lin_idx]-th[lin_idx])<0 && dS[i_file]>=0 && S[i_file]>=0){
 
-                  th[lin_idx] = th[lin_idx] - th[lin_idx]*(
+                  th_update[lin_idx] = th_update[lin_idx] - th[lin_idx]*(
 //                   th[lin_idx] = th[lin_idx] - (
-                                (double)lrate*(double)dS[i_file]*exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th)+
-                                (double)s_gain*(double)lrate*(double)S[i_file]*exp((distances[lin_idx]-(double)th[lin_idx])/(double)tau_th));                    
+                                (double)lrate*(double)dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th)+
+                                (double)s_gain*(double)lrate*(double)S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th));                    
             }    
         }            
     }
