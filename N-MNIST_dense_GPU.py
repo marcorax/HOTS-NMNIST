@@ -881,7 +881,7 @@ Class2_old_weights=np.load("Class2_old_weights.npy")
 
 # Parameters
 # batch_size = 4 #too high and it might affect how fast it converges 128 it halts progression
-batch_size = 64 #too high and it might affect how fast it converges 128 it halts progression
+batch_size = 128 #too high and it might affect how fast it converges 128 it halts progression
 
 n_labels = 10
 n_epochs = np.int32(np.floor(len(train_labels)/batch_size))#I will lose some results
@@ -894,17 +894,17 @@ n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-lrate_0 = 1e-3
+lrate_0 = 1e-4
 # th_lrate_0 = 5e-2#Check if smaller can help differentiate more clusters
-th_lrate_0 = 1e-3#Check if smaller can help differentiate more clusters
-s_gain = 1e-4
+th_lrate_0 = 1e-4#Check if smaller can help differentiate more clusters
+s_gain = 1e-3
 # s_gain = 1e1
 
 win_l_0 = 9
 
 th_decay_0=0.9
 # th_size_0=250
-th_size_0=10
+th_size_0=20
 res_x_0 = 28
 res_y_0 = 28
 
@@ -917,7 +917,7 @@ Conv0 = Conv_Layer(n_clusters_0, tau_0, res_x_0, res_y_0, win_l_0, n_pol_0, lrat
 tau_2 = 1e3#1e3 actually gave some nice features
 tau_2_fb = 1e1
 n_clusters_2=10
-lrate_2 = 1e-3#If too high  you end up  with a single cluster same as lrate0 works well
+lrate_2 = 1e-4#If too high  you end up  with a single cluster same as lrate0 works well
 res_x_2 = 28
 res_y_2 = 28
 
@@ -1184,8 +1184,12 @@ f = open('Libs/cl_kernels/next_ev.cl', 'r')
 fstr = "".join(f.readlines())
 program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
 
-n_epochs=1
-for epoch_i in range(n_epochs):
+n_epochs=20
+validation_split=0.1
+validation_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
+validation_cutoff = np.zeros([n_epochs, int(n_batches*validation_split)+1])
+
+for epoch_i in range(0, n_epochs):
     rec=0
     for batch_i in range(0,n_batches):     
     # for batch_i in range(1):     
@@ -1252,7 +1256,7 @@ for epoch_i in range(n_epochs):
             Conv0.infer(net_buffers, queue)
             Class2.infer(net_buffers, queue)
             
-            if (batch_i%5):
+            if (batch_i%validation_split*100):
                 Class2.learn(net_buffers, queue)
                 
                 if epoch_i<second_fase_i_epoch:
@@ -1307,7 +1311,7 @@ for epoch_i in range(n_epochs):
         
         end_exec = time.time()
         
-        if (batch_i%5):
+        if (batch_i%int(validation_split*100)):
             print("LEARNING BATCH")
         else:
             print("VALIDATION BATCH")
@@ -1339,6 +1343,11 @@ for epoch_i in range(n_epochs):
             thresholds=Conv0.variables["thresholds"]
             thresholds_bf=Conv0.buffers["thresholds_bf"]
             cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
+            
+        if not (batch_i%int(validation_split*100)):
+            validation_accuracy[epoch_i, int(batch_i*validation_split)] = label_accuracy
+            validation_cutoff[epoch_i, int(batch_i*validation_split)] = avg_processed_ev
+
 
 
 # centroids0_base=Conv0.variables["centroids"].copy()
@@ -1347,8 +1356,8 @@ for epoch_i in range(n_epochs):
 centroids0_update=Conv0.variables["centroids"].copy()
 centroids2_update=Class2.variables["centroids"].copy()
 
-centroids2 = centroids2_update - centroids2_base
-centroids0 = centroids0_update - centroids0_base
+centroids2 = centroids2_update - init_centroids_2
+centroids0 = centroids0_update - init_centroids_0
 #TODO CONTINUE FROM THIS
 
 #%% S dS plots
@@ -1548,18 +1557,20 @@ cl.enqueue_copy(queue, lrate_bf, np.float32(lrate_2)).wait()
 
 #%% SAVE
 save_dr = "Results/weights_save_NMNIST/"
-np.save(save_dr+"Conv0_old_weights_best_results_th_stable91",Conv0.variables["centroids"])
-np.save(save_dr+"Conv0_old_th_learnt_best_results_th_stable91",Conv0.variables["thresholds"])
-np.save(save_dr+"Class2_old_weights_learnt_best_results_th_stable91",Class2.variables["centroids"])
+np.save(save_dr+"Conv0_old_weights_best_results_th_stable91_tmp3",Conv0.variables["centroids"])
+np.save(save_dr+"Conv0_old_th_learnt_best_results_th_stable91_tmp3",Conv0.variables["thresholds"])
+np.save(save_dr+"Class2_old_weights_learnt_best_results_th_stable91_tmp3",Class2.variables["centroids"])
+np.save(save_dr+"Accuracy_progress_stable91_tmp3",validation_accuracy)
+np.save(save_dr+"Cutoff_progress_stable91_tmp3",avg_processed_ev)
 
 
 
 #%% LOAD
 save_dr = "Results/weights_save_NMNIST/"
 
-Conv0.variables["centroids"]=np.load(save_dr+"Conv0_old_weights_tmp.npy")
-Conv0.variables["thresholds"]=np.load(save_dr+"Conv0_old_th_learnt_tmp.npy")
-Class2.variables["centroids"]=np.load(save_dr+"Class2_old_weights_learnt_tmp.npy")
+Conv0.variables["centroids"]=np.load(save_dr+"Conv0_old_weights_best_results_th_stable91.npy")
+Conv0.variables["thresholds"]=np.load(save_dr+"Conv0_old_th_learnt_best_results_th_stable91.npy")
+Class2.variables["centroids"]=np.load(save_dr+"Class2_old_weights_learnt_best_results_th_stable91.npy")
 
 centroids_0_bf=Conv0.buffers["centroids_bf"]
 thresholds_0_bf=Conv0.buffers["thresholds_bf"]
