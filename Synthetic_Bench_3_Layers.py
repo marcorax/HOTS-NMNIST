@@ -576,7 +576,7 @@ n_all_events = len(concat_all_surfs)
 # for cluster_i in range(n_clusters[0]):
 #     label=np.random.randint(0,9)
 #     recording=np.random.randint(0,len(train_surfs_0[label]))
-#     surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))
+#     surface_i=np.random.randint(0,len(train_surfs_0[label][recording]))lrate_0
 #     weights_0[:,:,cluster_i]=train_surfs_0[label][recording][surface_i]
 
 def on_press(key):
@@ -614,7 +614,7 @@ lrate_0 = 0.0001
 
 ###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
 ###seems that more units does not fix that, weirdly enough. too slow and other
-## characters creeps in.
+## characters creeps in.lrate_0
 
 lrate_th_1 = 0.0002
 lrate_th_0 = 0.0002

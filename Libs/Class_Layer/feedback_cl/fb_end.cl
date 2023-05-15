@@ -44,7 +44,7 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
             }                        
         
             if(ev_i==0){
-                dS[i_file] = tmp_S;
+                dS[i_file] = fabs(tmp_S);
             }
             else{
                 dS[i_file] = fabs(tmp_S-S[i_file]);
