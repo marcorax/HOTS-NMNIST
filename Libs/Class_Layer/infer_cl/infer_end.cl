@@ -9,6 +9,7 @@ __kernel void infer_end(__global int *ts,
                         __global int *n_events_b, __global int *batch_labels,
                         __global double *distances, __global int *closest, 
                         __global int *processed_ev, __global int *correct_ev,
+                        __global int *predicted_ev,
                         __global int *correct_response,
                         __global int *fevskip, __global int *bevskip)
 {
@@ -23,7 +24,7 @@ __kernel void infer_end(__global int *ts,
     int ts_i;  
     double min_distance;
     
-    lin_idx = idx2d(i_file, (int) get_global_size(0), ev_i, n_events);
+    lin_idx = idx2d(i_file, nfiles, ev_i, n_events);
     
     ts_i = ts[lin_idx];   
         
@@ -42,6 +43,8 @@ __kernel void infer_end(__global int *ts,
             }                              
         }    
         processed_ev[i_file] += 1;
+        lin_idx = idx2d(i_file, nfiles, ev_i, n_events);
+        predicted_ev[lin_idx] = closest[i_file];
     }  
     bevskip[i_file] = fevskip[i_file];     
     if (closest[i_file]==batch_labels[i_file] && ts_i!=-1 && fevskip[i_file]==0){

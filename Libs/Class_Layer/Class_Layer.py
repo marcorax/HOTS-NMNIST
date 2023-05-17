@@ -823,6 +823,7 @@ class Class_Layer:
         closest_c_bf = self.buffers["closest_c_bf"]
         processed_ev_bf = self.buffers["processed_ev_bf"]
         correct_ev_bf = self.buffers["correct_ev_bf"]
+        predicted_ev_bf = ext_buffer["predicted_ev_bf"]
         fevskip_bf = ext_buffer["fevskip_bf"] 
         bevskip_bf = ext_buffer["bevskip_bf"] 
         correct_response_bf = self.buffers["correct_response_bf"]
@@ -837,6 +838,7 @@ class Class_Layer:
                                n_clusters_bf, ev_i_bf,
                                n_events_bf, batch_labels_bf, distances_bf, 
                                closest_c_bf, processed_ev_bf, correct_ev_bf,
+                               predicted_ev_bf,
                                correct_response_bf, fevskip_bf, bevskip_bf)
         
     def queue_init_infer_end(self, ext_buffer, queue):

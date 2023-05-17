@@ -917,7 +917,7 @@ Conv0 = Conv_Layer(n_clusters_0, tau_0, res_x_0, res_y_0, win_l_0, n_pol_0, lrat
 
 #Class Layer 3 data and parameters
 tau_2 = 1e3#1e3 actually gave some nice features
-tau_2_fb = 1e1
+tau_2_fb = 1e3
 n_clusters_2=10
 lrate_2 = 1e-3#f too high  you end up  with a single cluster same as lrate0 works well
 res_x_2 = 28
@@ -1087,7 +1087,8 @@ for epoch_i in range(n_epochs):
         train_batch_labels = np.zeros([batch_size],dtype=np.int32)
         n_events_batch = np.zeros([batch_size],dtype=np.int32)
         time_surface = np.zeros([batch_size, res_x_2, res_y_2, n_clusters_0],dtype=np.float32)#TODO add zeropadding
-        
+        predicted_ev = -1*np.ones([batch_size, n_max_events],dtype=np.int32)
+
         
         for i in range(batch_size):
             data_events = train_set_orig[train_labels[rec+i]][train_rec_idx[rec+i]]
@@ -1111,12 +1112,15 @@ for epoch_i in range(n_epochs):
         batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=train_batch_labels)
         fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
         bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
+        predicted_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=predicted_ev)
+
         # time_surface_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_surface)
 
         
         net_buffers = {"xs_bf" : xs_bf, "ys_bf" : ys_bf, "ps_bf" : ps_bf, 
                        "ts_bf" : ts_bf, "ev_i_bf" : ev_i_bf, 
                        "n_events_bf" : n_events_bf, 
+                       "predicted_ev_bf" : predicted_ev_bf,
                        "batch_labels_bf" : batch_labels_bf, 
                        "fevskip_bf" : fevskip_bf, "bevskip_bf" : bevskip_bf}
         
@@ -1205,7 +1209,9 @@ program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
 
 n_epochs=20
 validation_split=0.1
+
 validation_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
+validation_label_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
 validation_cutoff = np.zeros([n_epochs, int(n_batches*validation_split)+1])
 
 for epoch_i in range(0, n_epochs):
@@ -1257,7 +1263,8 @@ for epoch_i in range(0, n_epochs):
         rec+=batch_size 
         processed_ev = np.zeros([batch_size],dtype=np.int32)
         correct_ev = np.zeros([batch_size],dtype=np.int32)
-        
+        predicted_ev = -1*np.ones([batch_size, n_max_events],dtype=np.int32)
+
         # Network Buffers
         xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
         ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
@@ -1267,6 +1274,7 @@ for epoch_i in range(0, n_epochs):
         n_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
         processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
         correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+        predicted_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=predicted_ev)
         batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=train_batch_labels)
         fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
         bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
@@ -1276,6 +1284,7 @@ for epoch_i in range(0, n_epochs):
                        "n_events_bf" : n_events_bf, 
                        "processed_ev_bf" : processed_ev_bf, 
                        "correct_ev_bf" : correct_ev_bf, 
+                       "predicted_ev_bf" : predicted_ev_bf,
                        "batch_labels_bf" : batch_labels_bf, 
                        "n_labels_bf" : Class2.buffers["n_clusters_bf"],
                        "fevskip_bf" : fevskip_bf, "bevskip_bf" : bevskip_bf}
@@ -1355,13 +1364,22 @@ for epoch_i in range(0, n_epochs):
         # if (batch_i%5):
         Conv0.batch_update(queue)        
         Class2.batch_update(queue)
+        cl.enqueue_copy(queue, predicted_ev, net_buffers["predicted_ev_bf"]).wait()
+
         
         processed_ev = Class2.variables["processed_ev"]
         correct_ev = Class2.variables["correct_ev"]
         
         avg_processed_ev = np.mean(processed_ev / n_events_batch)
         avg_accuracy = np.mean(correct_ev / processed_ev)
-        label_accuracy = np.sum((correct_ev / processed_ev)>0.5)/batch_size
+        
+        label_accuracy = 0
+        for rec_i in range(batch_size):
+            idx,counts = np.unique(predicted_ev[rec_i], return_counts=True)
+            predicted_label = idx[np.argmax(counts[1:])+1]
+            label_accuracy += predicted_label==train_batch_labels[rec_i]
+        
+        label_accuracy = label_accuracy/batch_size        
         
         # print("TRAIN")
         print("Epoch: "+str(epoch_i)+" of "+str(n_epochs))
@@ -1381,7 +1399,7 @@ for epoch_i in range(0, n_epochs):
             cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
             
         if not (batch_i%int(validation_split*100)):
-            validation_accuracy[epoch_i, int(batch_i*validation_split)] = label_accuracy
+            validation_accuracy[epoch_i, int(batch_i*validation_split)] = avg_accuracy
             validation_cutoff[epoch_i, int(batch_i*validation_split)] = avg_processed_ev
 
 
@@ -1399,7 +1417,7 @@ centroids0 = centroids0_update - init_centroids_0
 
 #%% Histogram plot
 centroids0 = Conv0.variables["centroids"] # + centroids0*100
-cluster_i = 2
+cluster_i = 20
 
 
 fig, axs = plt.subplots(1,3)
@@ -1641,7 +1659,7 @@ np.save(save_dr+"Class2_params"+run_name,Class2_Params)
 
 #%% LOAD
 save_dr = "Results/weights_save_NMNIST/"
-run_name = "_bigger_net_s_low.npy"
+run_name = "_bigger_net_s_1e-3.npy"
 
 Conv0.variables["centroids"]=np.load(save_dr+"Conv0_weights"+run_name)
 Conv0.variables["thresholds"]=np.load(save_dr+"Conv0_th"+run_name)
@@ -1656,3 +1674,129 @@ centroids_2_bf=Class2.buffers["centroids_bf"]
 cl.enqueue_copy(queue, centroids_0_bf, Conv0.variables["centroids"]).wait()
 cl.enqueue_copy(queue, thresholds_0_bf, Conv0.variables["thresholds"]).wait()
 cl.enqueue_copy(queue, centroids_2_bf, Class2.variables["centroids"]).wait()
+
+
+#%% TEST
+
+rec = 0
+epoch_i=0
+n_batches = len(test_labels)//batch_size
+# n_batches = 1
+ev_i = 0
+
+
+
+f = open('Libs/cl_kernels/next_ev.cl', 'r')
+fstr = "".join(f.readlines())
+program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
+
+test_accuracy = np.zeros([n_batches])
+test_label_accuracy = np.zeros([n_batches])
+test_cutoff = np.zeros([n_batches])
+
+
+rec=0
+for batch_i in range(0,n_batches):     
+    
+    n_events_rec=np.zeros(batch_size, dtype=int)
+
+    for i in range(batch_size):
+        data_events = test_set_orig[test_labels[rec+i]][test_rec_idx[rec+i]]
+        n_events_rec[i] = len(data_events[0])
+        
+    n_max_events = max(n_events_rec)
+    
+    rec_dist = np.zeros([batch_size, n_max_events, n_clusters_2])
+    
+    xs_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ys_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ps_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    ts_np = -1*np.ones((batch_size,n_max_events),dtype=np.int32)
+    test_batch_labels = np.zeros([batch_size],dtype=np.int32)
+    n_events_batch = np.zeros([batch_size],dtype=np.int32)
+    
+    
+    for i in range(batch_size):
+        data_events = test_set_orig[test_labels[rec+i]][test_rec_idx[rec+i]]
+        n_events = len(data_events[0])
+        xs_np[i,:n_events] = data_events[0]
+        ys_np[i,:n_events] = data_events[1]
+        ps_np[i,:n_events] = data_events[2]*0 #removing pol information at layer 1
+        ts_np[i,:n_events] = data_events[3]
+        test_batch_labels[i] = test_labels[rec+i]
+        n_events_batch[i] = n_events
+        
+    rec+=batch_size 
+    processed_ev = np.zeros([batch_size],dtype=np.int32)
+    correct_ev = np.zeros([batch_size],dtype=np.int32)
+    predicted_ev = -1*np.ones([batch_size, n_max_events],dtype=np.int32)
+    
+    # Network Buffers
+    xs_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=xs_np)
+    ys_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ys_np)
+    ps_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=ps_np)
+    ts_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=ts_np)
+    ev_i_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=np.int32(0))
+    n_events_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=np.int32(n_max_events))
+    processed_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=processed_ev)
+    correct_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=correct_ev)
+    predicted_ev_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=predicted_ev)
+    batch_labels_bf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=test_batch_labels)
+    fevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=fevskip)
+    bevskip_bf = cl.Buffer(ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=bevskip)
+    
+    net_buffers = {"xs_bf" : xs_bf, "ys_bf" : ys_bf, "ps_bf" : ps_bf, 
+                   "ts_bf" : ts_bf, "ev_i_bf" : ev_i_bf, 
+                   "n_events_bf" : n_events_bf, 
+                   "processed_ev_bf" : processed_ev_bf, 
+                   "correct_ev_bf" : correct_ev_bf, 
+                   "predicted_ev_bf" : predicted_ev_bf,
+                   "batch_labels_bf" : batch_labels_bf, 
+                   "n_labels_bf" : Class2.buffers["n_clusters_bf"],
+                   "fevskip_bf" : fevskip_bf, "bevskip_bf" : bevskip_bf}
+    
+    start_exec = time.time()
+    
+    for ev_i in range(n_max_events):
+        
+        Conv0.infer(net_buffers, queue)
+        Class2.infer(net_buffers, queue)       
+        kernel=program.next_ev(queue, np.array([batch_size]), None, ev_i_bf)
+    
+    end_exec = time.time()
+    
+    Conv0.batch_update(queue)        
+    Class2.batch_update(queue)
+    cl.enqueue_copy(queue, predicted_ev, net_buffers["predicted_ev_bf"]).wait()
+
+    processed_ev = Class2.variables["processed_ev"]
+    correct_ev = Class2.variables["correct_ev"]
+    
+    avg_processed_ev = np.mean(processed_ev / n_events_batch)
+    avg_accuracy = np.mean(correct_ev / processed_ev)
+    
+    label_accuracy = 0
+    for rec_i in range(batch_size):
+        idx,counts = np.unique(predicted_ev[rec_i], return_counts=True)
+        predicted_label = idx[np.argmax(counts[1:])+1]
+        label_accuracy += predicted_label==test_batch_labels[rec_i]
+    
+    label_accuracy = label_accuracy/batch_size
+    
+    print("TEST")
+    print("Epoch: "+str(epoch_i)+" of "+str(n_epochs))
+    print("Batch: "+str(batch_i)+" of "+str(n_batches))
+    print("Processed rec "+str(rec)+" of "+str(len(train_labels))+" Label: "+str(np.unique(train_batch_labels[np.where(correct_ev!=0)])))
+    print("Elapsed time is ", (end_exec-start_exec) * 10**3, "ms")
+    print("Accuracy is "+str(avg_accuracy)+" of "+str(avg_processed_ev)+" processed events")
+    print("Label Accuracy is "+str(label_accuracy))
+
+    Conv0.batch_flush(queue)        
+    Class2.batch_flush(queue) 
+        
+    test_accuracy[batch_i] = avg_accuracy
+    test_label_accuracy[batch_i] = label_accuracy
+    test_cutoff[batch_i] = avg_processed_ev
+
+
+
