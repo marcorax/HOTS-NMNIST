@@ -600,7 +600,7 @@ def on_press(key):
 
 
 time_context_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
-time_context_fb_1 = np.zeros([n_clusters_1],dtype=int)
+time_context_fb_1 = np.zeros([n_clusters_1, n_words],dtype=int)
 
 time_context_2 = np.zeros([n_clusters_1, n_words],dtype=int)
 time_context_fb_2 = np.zeros([n_sentences],dtype=int)
@@ -608,16 +608,16 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 1
 tau_2 = 1
 
-lrate_2 = 0.0001
-lrate_1 = 0.0001
-lrate_0 = 0.0001
+lrate_2 = 0.001
+lrate_1 = 0.001
+lrate_0 = 0.001
 
 ###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.lrate_0
 
-lrate_th_1 = 0.0002
-lrate_th_0 = 0.0002
+lrate_th_1 = 0.0001
+lrate_th_0 = 0.0001	
 th_tau_rel = 0.1
 
 feedback_sep = 0.00005
@@ -639,14 +639,14 @@ with keyboard.Listener(on_press=on_press) as listener:
             #event mask used to avoid exponential decay calculation for pixel 
             # that did not generate an event yet
             mask_start_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
-            mask_start_fb_1 = np.zeros([n_clusters_1],dtype=int)
+            mask_start_fb_1 = np.zeros([n_clusters_1, n_words],dtype=int)
             
             mask_start_2 = np.zeros([n_clusters_1, n_words],dtype=int)
             mask_start_fb_2 = np.zeros([n_sentences],dtype=int)
             
-            y_som_0=0
-            y_som_old_0=0
-            dt_y_som_0=0
+            y_som_0=np.zeros(2)
+            y_som_old_0=np.zeros(2)
+            dt_y_som_0=np.zeros(2)
            
             y_som_1=0
             y_som_old_1=0
@@ -718,28 +718,32 @@ with keyboard.Listener(on_press=on_press) as listener:
                         norm = n_sentences-1
                         
                         #supervised
-                        y_som_1=(ts_fb_lay_2[label]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=label]/norm),axis=0)) #normalized by activation
+                        y_som_1=(ts_fb_lay_2[rec_closest_2]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=rec_closest_2]/norm),axis=0)) #normalized by activation
+                        if label != rec_closest_2:
+                            y_som_1=-y_som_1
                         
                         #unsupervised
                         # y_som_1=(ts_fb_lay_2[rec_closest_2]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=rec_closest_2]/norm),axis=0)) #normalized by activation
         
         
-                        dt_y_som_1 = y_som_1 - y_som_old_1
+                        dt_y_som_1 = np.sign(y_som_1)*np.abs(y_som_1 - y_som_old_1)
                         y_som_old_1 = y_som_1
                         
                         #Layer 1
-                        time_context_fb_1[rec_closest_1] = ref_ts
-                        mask_start_fb_1[rec_closest_1]=1    
+                        time_context_fb_1[rec_closest_1, ref_word_pos] = ref_ts
+                        mask_start_fb_1[rec_closest_1, ref_word_pos]=1    
                         ts_fb_lay_1 = np.exp((time_context_fb_1-ref_ts)*mask_start_fb_1/tau_1)*mask_start_fb_1                                                        
                         norm = n_clusters_1-1
                         
-                        y_som_0 = (ts_fb_lay_1[rec_closest_1]-np.sum((ts_fb_lay_1[np.arange(n_clusters_1)!=rec_closest_1]/norm),axis=0)) #normalized by activation
+                        y_som_0[ref_word_pos] = (ts_fb_lay_1[rec_closest_1, ref_word_pos]-np.sum((ts_fb_lay_1[np.arange(n_clusters_1)!=rec_closest_1, ref_word_pos]/norm),axis=0)) #normalized by activation
                         
                         y_som_0  = np.sign(y_som_1)*np.abs(y_som_0)
             
-                        dt_y_som_0 = y_som_0 - y_som_old_0
-                        y_som_old_0 = y_som_0
+                        dt_y_som_0 =  np.sign(y_som_1)*np.abs(y_som_0 - y_som_old_0)
+                        y_som_old_0 = y_som_0.copy()
                         
+                        w_y_som_0 = y_som_0[ref_word_pos]
+                        w_dt_y_som_0 = dt_y_som_0[ref_word_pos]
                         
                         ##WEIGHTS AND TH UPDATE
 
@@ -804,7 +808,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         # Keep only the distances for winners
                         elem_distances_0=elem_distances_0[:,:,:]*rec_closest_0_one_hot[None,None,:]
-                        weights_0[:,:,:]+= (lrate_0*(dt_y_som_0*elem_distances_0[:]) + ratio_sds*lrate_0*(y_som_0*elem_distances_0[:]))
+                        weights_0[:,:,:] += (lrate_0*(w_dt_y_som_0*elem_distances_0[:]) + ratio_sds*lrate_0*(w_y_som_0*elem_distances_0[:]))
 
                         
                         if slow_learning:                            
@@ -816,14 +820,14 @@ with keyboard.Listener(on_press=on_press) as listener:
                                     th_dist = th_0[rec_closest_0]-rec_distances_0[rec_closest_0]
                                     # th_update = np.exp(-th_dist/th_tau)*th_dist
                                     th_update = np.exp(-th_dist/th_tau)*th_0[rec_closest_0]
-                                    th_0[rec_closest_0] += lrate_th_0*dt_y_som_0*th_update + ratio_sds*lrate_th_0*y_som_0*th_update
+                                    th_0[rec_closest_0] += lrate_th_0*w_dt_y_som_0*th_update + ratio_sds*lrate_th_0*w_y_som_0*th_update
                                     
-                                elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0)  and (y_som_0>=0) and (dt_y_som_0>=0):
+                                elif ((rec_distances_0[i_cluster]-th_0[i_cluster])<0)  and (w_y_som_0>=0) and (w_dt_y_som_0>=0):
                                 # else:
                                     th_dist = th_0[i_cluster]-rec_distances_0[i_cluster]
                                     # th_update = np.exp(-th_dist/th_tau)*th_dist
                                     th_update = np.exp(-th_dist/th_tau)*th_0[i_cluster]
-                                    th_0[i_cluster] -= lrate_th_0*dt_y_som_0*th_update + ratio_sds*lrate_th_0*y_som_0*th_update
+                                    th_0[i_cluster] -= lrate_th_0*w_dt_y_som_0*th_update + ratio_sds*lrate_th_0*w_y_som_0*th_update
  
                             # #treshold
                             # for i_cluster in range(n_clusters_0):
@@ -840,7 +844,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                         if not slow_learning:                            
                             #fast_threshold_control
                             for i_cluster in range(n_clusters_0):
-                                if (i_cluster==rec_closest_0) and (y_som_0<0):
+                                if (i_cluster==rec_closest_0) and (w_y_som_0<0):
                                     th_0[i_cluster] -=  feedback_sep*th_0[i_cluster]
                                 # elif (rec_distances_0[i_cluster]-th_0[i_cluster])<0 and (y_som_0<0):             
                                 #     th_0[i_cluster] +=  feedback_sep*th_0[i_cluster]
