@@ -198,7 +198,7 @@ res_x = 5
 res_y = 5
 tau = 5000
 n_pol = 6
-
+    
 data_surf=[]
 
 characters_ts = [[], [], [], [], []]
@@ -608,19 +608,24 @@ time_context_fb_2 = np.zeros([n_sentences],dtype=int)
 tau_1 = 1
 tau_2 = 1
 
-lrate_2 = 0.001
-lrate_1 = 0.001
-lrate_0 = 0.001
+lrate_2 = 0.0001
+lrate_1 = 0.0001
+lrate_0 = 0.0001
+
+lrate_2_pre = 0.001
+lrate_1_pre = 0.001
+lrate_0_pre = 0.001
 
 ###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.lrate_0
 
-lrate_th_1 = 0.0001
-lrate_th_0 = 0.0001	
+lrate_th_1 = 0.0008
+lrate_th_0 = 0.0008
+
 th_tau_rel = 0.1
 
-feedback_sep = 0.00005
+feedback_sep = 0.0001
 
 ratio_sds = 0.01
 
@@ -629,7 +634,8 @@ slow_learning = False
 print_lay=2  
 with keyboard.Listener(on_press=on_press) as listener:
     
-    for epoch in range(3):   
+    for epoch in range(3): 
+        sentence_accuracy = np.zeros(len(data_surf))
         for sentence_i in range(len(data_surf)):
             n_events = len(data_surf[sentence_i])
             sentence_surfs = data_surf[sentence_i]
@@ -652,9 +658,12 @@ with keyboard.Listener(on_press=on_press) as listener:
             y_som_old_1=0
             dt_y_som_1=0   
             
+            max_th_0 = 0
+            max_th_1 = 0
+            
             if not slow_learning:        
                 th_0 = np.zeros(n_clusters_0)+10
-                th_1 = np.zeros(n_clusters_1)+10     
+                th_1 = np.zeros(n_clusters_1)+10
                 
             for ts_i in range(n_events):
                 
@@ -670,8 +679,10 @@ with keyboard.Listener(on_press=on_press) as listener:
                 # Closest center with threshold computation
                 rec_closest_0=np.argmin(rec_distances_0-th_0,axis=0)
                 # rec_closest_0=np.argmin(rec_distances_0,axis=0)
-
-
+                
+                if not slow_learning:
+                    if (rec_distances_0[rec_closest_0] > max_th_0):
+                        max_th_0 = rec_distances_0[rec_closest_0]
                 
                 # Layer 1 check
                 if (rec_distances_0[rec_closest_0]-th_0[rec_closest_0])<0:
@@ -693,6 +704,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                     rec_closest_1=np.argmin(rec_distances_1-th_1,axis=0)
                     # rec_closest_1=np.argmin(rec_distances_1,axis=0)
 
+                    if not slow_learning:
+                        if (rec_distances_1[rec_closest_1] > max_th_1):
+                            max_th_1 = rec_distances_1[rec_closest_0]
                     
                     # Layer 2 check
                     if (rec_distances_1[rec_closest_1]-th_1[rec_closest_1])<0:
@@ -727,7 +741,7 @@ with keyboard.Listener(on_press=on_press) as listener:
         
         
                         dt_y_som_1 = np.sign(y_som_1)*np.abs(y_som_1 - y_som_old_1)
-                        y_som_old_1 = y_som_1
+                        y_som_old_1 = y_som_1.copy()
                         
                         #Layer 1
                         time_context_fb_1[rec_closest_1, ref_word_pos] = ref_ts
@@ -750,8 +764,13 @@ with keyboard.Listener(on_press=on_press) as listener:
                         #Layer 2                       
                         #supervised
                         elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_2])
-                        weights_2[:,:,rec_closest_2]+=lrate_2*(dt_y_som_1*elem_distances_2[:]) + ratio_sds*lrate_2*(y_som_1*elem_distances_2[:])
-                        
+                        if slow_learning:
+                            weights_2[:,:,rec_closest_2]+=lrate_2*(dt_y_som_1*elem_distances_2[:]) + ratio_sds*lrate_2*(y_som_1*elem_distances_2[:])
+                        else:
+                            weights_2[:,:,rec_closest_2]+= lrate_2_pre*(dt_y_som_1*elem_distances_2[:] + 0*ratio_sds*(y_som_1*elem_distances_2[:]))
+
+                            
+                            
                         #unsupervised       
                         # elem_distances_2 = (ts_lay_2[:,:]-weights_2[:,:,rec_closest_1])
                         # weights_2[:,:,rec_closest_1]+=lrate_2*elem_distances_2[:]
@@ -764,8 +783,11 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         # keep only the distances for winners
                         # elem_distances_1=elem_distances_1p[:,:,:]*rec_closest_1_one_hot[None,None,:]
-                        weights_1[:,:,rec_closest_1]+=lrate_1*(dt_y_som_1*elem_distances_1[:]) + ratio_sds*lrate_1*(y_som_1*elem_distances_1[:])
-                        
+                        if slow_learning: 
+                            weights_1[:,:,rec_closest_1]+=lrate_1*(dt_y_som_1*elem_distances_1[:]) + ratio_sds*lrate_1*(y_som_1*elem_distances_1[:])
+                        else:
+                            weights_1[:,:,rec_closest_1]+= lrate_1_pre*(dt_y_som_1*elem_distances_1[:] + 0*ratio_sds*(y_som_1*elem_distances_1[:]))
+
                         #treshold
                         if slow_learning:
                             for i_cluster in range(n_clusters_1): # THIS WORKS
@@ -808,8 +830,10 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         # Keep only the distances for winners
                         elem_distances_0=elem_distances_0[:,:,:]*rec_closest_0_one_hot[None,None,:]
-                        weights_0[:,:,:] += (lrate_0*(w_dt_y_som_0*elem_distances_0[:]) + ratio_sds*lrate_0*(w_y_som_0*elem_distances_0[:]))
-
+                        if slow_learning: 
+                            weights_0[:,:,:] += (lrate_0*(w_dt_y_som_0*elem_distances_0[:]) + ratio_sds*lrate_0*(w_y_som_0*elem_distances_0[:]))
+                        else: 
+                            weights_0[:,:,:] += lrate_0_pre*(w_dt_y_som_0*elem_distances_0[:] + 0*ratio_sds*(w_y_som_0*elem_distances_0[:]))
                         
                         if slow_learning:                            
                             # treshold
@@ -885,10 +909,11 @@ with keyboard.Listener(on_press=on_press) as listener:
                         elif print_lay==2:
                             #Layer1
                             print("Y-som: "+str(y_som_1)+" dt Y-som: "+str(dt_y_som_1)+" Closest_center: "+str(rec_closest_1))
+                            print(rec_distances_1-th_1)
                             print(th_1)
 
                         
-
+                
                 if pause_pressed == True:    
                     if n_clusters_0>1:
                         for feat in range(n_clusters_0):
@@ -899,7 +924,21 @@ with keyboard.Listener(on_press=on_press) as listener:
                         plt.draw()
                     plt.pause(5)
                     pause_pressed=False
-                    
+            
+            
+            sentence_accuracy[sentence_i]=rel_accuracy
+            
+            if sentence_i>3:
+                increase_max = 0.01
+                accuracy_increase_3 = np.abs((sentence_accuracy[sentence_i] - sentence_accuracy[sentence_i-1])) < increase_max
+                accuracy_increase_2 = np.abs((sentence_accuracy[sentence_i-1] - sentence_accuracy[sentence_i-2])) < increase_max
+                accuracy_increase_1 = np.abs((sentence_accuracy[sentence_i-2] - sentence_accuracy[sentence_i-3])) < increase_max
+                if accuracy_increase_3 and accuracy_increase_2 and accuracy_increase_1 and not slow_learning :
+                    slow_learning = True
+                    th_0 = np.zeros(n_clusters_0)+max_th_0*1.5
+                    th_1 = np.zeros(n_clusters_1)+max_th_1*1.5
+                        
+                
                    
                         
                         
