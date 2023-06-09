@@ -538,13 +538,14 @@ fb_selected_weights_0 = weights_0
 fb_selected_weights_1 = weights_1
 
 
+
 #%% New Learning rule (dynamical thresholds!) two layers differential
 ##TODO second hidden get stuck so lower only learns the two available features VXV (V,X)
 from pynput import keyboard
 
 surf_x = 5
 surf_y = 5
-n_clusters_0 = 5 
+n_clusters_0 = 3 
 n_clusters_1 = 6
 
 #Each word is 3 characters long and sentences have no spaces
@@ -561,9 +562,159 @@ th_0 = np.zeros(n_clusters_0)+10
 th_1 = np.zeros(n_clusters_1)+10
 
 
+#%% PRETRAINING
+
+n_pre_t_recs = 100
+ratio_kmeans = 0.5
+total_evs = sum([len(data_surf[sentence_i]) for sentence_i in range(n_pre_t_recs)])
+
+#######KMEANS#####
+kmeans = KMeans(n_clusters=n_clusters_0)
+kmeans.fit(np.reshape(concat_all_surfs[:total_evs], [len(concat_all_surfs[:total_evs]),5*5]))
+k_centroids= kmeans.cluster_centers_
+
+#plot centroids
+fig, axs = plt.subplots(n_clusters_0)
+kmeans_weights_0 = np.random.rand(surf_x, surf_y, n_clusters_0)
+
+for pol_i in range(n_clusters_0):
+    axs[pol_i].imshow(np.reshape(k_centroids[pol_i], [5,5]))
+    kmeans_weights_0[:,:,pol_i]=np.reshape(k_centroids[pol_i], [5,5])
+
+weights_0 = ratio_kmeans*kmeans_weights_0 + (1-ratio_kmeans)*weights_0
+
+##################
 
 
+all_ts_lay_1 = np.zeros([total_evs, n_clusters_0, word_length])
 
+total_ev_i = 0   
+for sentence_i in range(n_pre_t_recs):
+    n_events = len(data_surf[sentence_i])
+    sentence_surfs = data_surf[sentence_i]
+    
+    
+    time_context_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
+    mask_start_1 = np.zeros([n_clusters_0, n_pol],dtype=int)  
+    time_context_2 = np.zeros([n_clusters_1, n_words],dtype=int)
+    mask_start_2 = np.zeros([n_clusters_1, n_words],dtype=int)
+
+
+    for ts_i in range(n_events):
+        
+        label = data_labels[sentence_i]
+        ref_ch_pos = data_events[sentence_i][2][ts_i]
+        ref_word_pos = ref_ch_pos//word_length
+        ref_ts =  data_events[sentence_i][3][ts_i]
+        
+        rec_distances_0=np.sum((sentence_surfs[ts_i,:,:,None]-weights_0[:,:,:])**2,axis=(0,1))
+
+        
+        # Closest center with threshold computation
+        rec_closest_0=np.argmin(rec_distances_0,axis=0)
+        
+               
+        time_context_1[rec_closest_0,ref_ch_pos] = ref_ts
+        mask_start_1[rec_closest_0,ref_ch_pos]=1
+        
+        # Extracting the single word ts
+        beg_ch_index = ref_word_pos*word_length
+        end_ch_index = (ref_word_pos+1)*word_length
+        all_ts_lay_1[total_ev_i] = np.exp((time_context_1[:,beg_ch_index:end_ch_index]\
+                           -ref_ts)*mask_start_1[:,beg_ch_index:end_ch_index]/\
+                              tau_1)*mask_start_1[:,beg_ch_index:end_ch_index]    
+
+
+        
+        total_ev_i+=1
+
+
+#######KMEANS#####
+kmeans = KMeans(n_clusters=n_clusters_1)
+kmeans.fit(np.reshape(all_ts_lay_1, [len(all_ts_lay_1),n_clusters_0*word_length]))
+k_centroids= kmeans.cluster_centers_
+
+kmeans_weights_1 = np.random.rand(n_clusters_0, word_length, n_clusters_1)
+
+for pol_i in range(n_clusters_1):
+    kmeans_weights_1[:,:,pol_i]=np.reshape(k_centroids[pol_i], [n_clusters_0,word_length])
+
+weights_1 = ratio_kmeans*kmeans_weights_1 + (1-ratio_kmeans)*weights_1
+
+##################
+
+
+label_mean_weights = np.random.rand(n_clusters_1, n_words, n_sentences)
+max_dist_0 = 0
+max_dist_1 = 0
+
+n_sentence_per_label = np.zeros(n_sentences)
+for sentence_i in range(n_pre_t_recs):
+    n_events = len(data_surf[sentence_i])
+    sentence_surfs = data_surf[sentence_i]
+    
+    
+    time_context_1 = np.zeros([n_clusters_0, n_pol],dtype=int)
+    mask_start_1 = np.zeros([n_clusters_0, n_pol],dtype=int)  
+    time_context_2 = np.zeros([n_clusters_1, n_words],dtype=int)
+    mask_start_2 = np.zeros([n_clusters_1, n_words],dtype=int)
+    label = data_labels[sentence_i]
+    
+    n_sentence_per_label[label] += 1
+    
+    for ts_i in range(n_events):
+        
+        ref_ch_pos = data_events[sentence_i][2][ts_i]
+        ref_word_pos = ref_ch_pos//word_length
+        ref_ts =  data_events[sentence_i][3][ts_i]
+        
+        rec_distances_0=np.sum((sentence_surfs[ts_i,:,:,None]-weights_0[:,:,:])**2,axis=(0,1))
+
+        
+        # Closest center with threshold computation
+        rec_closest_0=np.argmin(rec_distances_0,axis=0)
+        
+        if np.max(rec_distances_0,axis=0)>max_dist_0:
+            max_dist_0 = np.max(rec_distances_0,axis=0)
+        
+               
+        time_context_1[rec_closest_0,ref_ch_pos] = ref_ts
+        mask_start_1[rec_closest_0,ref_ch_pos]=1
+        
+        # Extracting the single word ts
+        beg_ch_index = ref_word_pos*word_length
+        end_ch_index = (ref_word_pos+1)*word_length
+        ts_lay_1 = np.exp((time_context_1[:,beg_ch_index:end_ch_index]\
+                           -ref_ts)*mask_start_1[:,beg_ch_index:end_ch_index]/\
+                              tau_1)*mask_start_1[:,beg_ch_index:end_ch_index]    
+
+        
+        rec_distances_1=np.sum((ts_lay_1[:,:,None]-weights_1[:,:,:])**2,axis=(0,1))
+
+        
+        rec_closest_1=np.argmin(rec_distances_1,axis=0)
+
+        if np.max(rec_distances_1,axis=0)>max_dist_1:
+            max_dist_1 = np.max(rec_distances_1,axis=0)
+
+        time_context_2[rec_closest_1,ref_word_pos] = ref_ts
+        mask_start_2[rec_closest_1,ref_word_pos]=1
+        
+        ts_lay_2 = np.exp((time_context_2-ref_ts)*mask_start_2/\
+                              tau_2)*mask_start_2   
+
+        label_mean_weights[:,:,label] += ts_lay_2/n_events                  
+
+for label_i in range(n_sentences):
+    label_mean_weights[:,:,label_i] = label_mean_weights[:,:,label_i]/n_sentence_per_label[label_i]     
+                
+                   
+weights_2 = ratio_kmeans*label_mean_weights + (1-ratio_kmeans)*weights_2
+
+th_0 = np.zeros(n_clusters_0)+max_dist_0
+th_1 = np.zeros(n_clusters_1)+max_dist_1
+
+#%% Training
 fig, axs = plt.subplots(n_clusters_0)
 fig.suptitle("New L Features")
 
@@ -612,29 +763,30 @@ lrate_2 = 0.0001
 lrate_1 = 0.0001
 lrate_0 = 0.0001
 
-lrate_2_pre = 0.001
-lrate_1_pre = 0.001
-lrate_0_pre = 0.001
+lrate_2_pre = 0.0005
+lrate_1_pre = 0.0005
+lrate_0_pre = 0.0005
 
 ###TODO THE TH0 AFFECTS COMPUTATION, IF TO FAST CLASSES GET'S CUT OUT 
 ###seems that more units does not fix that, weirdly enough. too slow and other
 ## characters creeps in.lrate_0
 
-lrate_th_1 = 0.0008
-lrate_th_0 = 0.0008
+lrate_th_1 = 0.0001
+lrate_th_0 = 0.0001
 
 th_tau_rel = 0.1
+
 
 feedback_sep = 0.0001
 
 ratio_sds = 0.01
 
 pause_pressed=False  
-slow_learning = False
+slow_learning = True
 print_lay=2  
 with keyboard.Listener(on_press=on_press) as listener:
     
-    for epoch in range(3): 
+    for epoch in range(5): 
         sentence_accuracy = np.zeros(len(data_surf))
         for sentence_i in range(len(data_surf)):
             n_events = len(data_surf[sentence_i])
@@ -740,7 +892,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         # y_som_1=(ts_fb_lay_2[rec_closest_2]-np.sum((ts_fb_lay_2[np.arange(n_sentences)!=rec_closest_2]/norm),axis=0)) #normalized by activation
         
         
-                        dt_y_som_1 = np.sign(y_som_1)*np.abs(y_som_1 - y_som_old_1)
+                        # dt_y_som_1 = np.sign(y_som_1)*np.abs(y_som_1 - y_som_old_1)
+                        dt_y_som_1 = (y_som_1 - y_som_old_1)
+
                         y_som_old_1 = y_som_1.copy()
                         
                         #Layer 1
@@ -753,7 +907,9 @@ with keyboard.Listener(on_press=on_press) as listener:
                         
                         y_som_0  = np.sign(y_som_1)*np.abs(y_som_0)
             
-                        dt_y_som_0 =  np.sign(y_som_1)*np.abs(y_som_0 - y_som_old_0)
+                        # dt_y_som_0 =  np.sign(y_som_1)*np.abs(y_som_0 - y_som_old_0)
+                        dt_y_som_0 =  y_som_0 - y_som_old_0
+
                         y_som_old_0 = y_som_0.copy()
                         
                         w_y_som_0 = y_som_0[ref_word_pos]
@@ -801,7 +957,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                                 elif ((rec_distances_1[i_cluster]-th_1[i_cluster])<0) and (y_som_1>=0) and (dt_y_som_1>=0):
                                 # else:
                                     th_dist = th_1[i_cluster]-rec_distances_1[i_cluster]
-                                    th_update = np.exp(-th_dist/th_tau)*th_dist
+                                    # th_update = np.exp(-th_dist/th_tau)*th_dist
                                     th_update = np.exp(-th_dist/th_tau)*th_1[i_cluster]
                                     th_1[i_cluster] -= lrate_th_1*dt_y_som_1*th_update + ratio_sds*lrate_th_1*y_som_1*th_update
                                     
@@ -929,7 +1085,7 @@ with keyboard.Listener(on_press=on_press) as listener:
             sentence_accuracy[sentence_i]=rel_accuracy
             
             if sentence_i>3:
-                increase_max = 0.01
+                increase_max = 0.05
                 accuracy_increase_3 = np.abs((sentence_accuracy[sentence_i] - sentence_accuracy[sentence_i-1])) < increase_max
                 accuracy_increase_2 = np.abs((sentence_accuracy[sentence_i-1] - sentence_accuracy[sentence_i-2])) < increase_max
                 accuracy_increase_1 = np.abs((sentence_accuracy[sentence_i-2] - sentence_accuracy[sentence_i-3])) < increase_max
@@ -959,3 +1115,19 @@ for pol_i in range(n_clusters_0):
         axs[pol_i].imshow(np.reshape(weights_0[:,:,pol_i], [5,5]))
     elif n_clusters_0==1:
         axs.imshow(np.reshape(weights_0[:,:,pol_i], [5,5]))
+
+
+#%% Save weights kmeans weights and thresholds:
+ 
+save_folder = "Results/Synth/"
+
+np.save(save_folder+"centroids_0.npy",weights_0)
+np.save(save_folder+"centroids_1.npy",weights_1)
+np.save(save_folder+"centroids_2.npy",weights_2)
+
+np.save(save_folder+"th_0.npy",th_0)
+np.save(save_folder+"th_1.npy",th_1)
+
+np.save(save_folder+"start_centroids_0.npy",kmeans_weights_0)
+np.save(save_folder+"start_centroids_1.npy",kmeans_weights_1)
+np.save(save_folder+"start_centroids_2.npy",label_mean_weights)

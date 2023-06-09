@@ -1222,8 +1222,8 @@ for epoch_i in range(1):
     # cl.enqueue_copy(queue, thresholds_0_bf, Conv0.variables["thresholds"]).wait()
 
     rec=0
-    # for batch_i in range(0,n_batches):     
-    for batch_i in range(2):     
+    for batch_i in range(0,n_batches):     
+    # for batch_i in range(2):     
         n_events_rec=np.zeros(batch_size, dtype=int)
 
         for i in range(batch_size):
@@ -1308,28 +1308,28 @@ for epoch_i in range(1):
             
 
 
-            S0=Class2.variables["output_S"]
-            dS0=Class2.variables["output_dS"]
+            # S0=Class2.variables["output_S"]
+            # dS0=Class2.variables["output_dS"]
 
-            S0_bf=Class2.buffers["output_S_bf"]
-            dS0_bf=Class2.buffers["output_dS_bf"]
+            # S0_bf=Class2.buffers["output_S_bf"]
+            # dS0_bf=Class2.buffers["output_dS_bf"]
 
-            cl.enqueue_copy(queue, S0, S0_bf).wait()
-            cl.enqueue_copy(queue, dS0, dS0_bf).wait()
+            # cl.enqueue_copy(queue, S0, S0_bf).wait()
+            # cl.enqueue_copy(queue, dS0, dS0_bf).wait()
             
-            closest0=Conv0.variables["closest_c"]
-            closest_bf=Conv0.buffers["closest_c_bf"]
-            cl.enqueue_copy(queue, closest0, closest_bf).wait()
+            # closest0=Conv0.variables["closest_c"]
+            # closest_bf=Conv0.buffers["closest_c_bf"]
+            # cl.enqueue_copy(queue, closest0, closest_bf).wait()
             
-            for bt in range(batch_size):
-                if ts_np[bt,ev_i]!=-1:
-                    S0_rec[bt, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] += S0[bt]
-                    dS0_rec[bt, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] += dS0[bt]
-                    S0_story[bt, ev_i] = S0[bt]
-                    dS0_story[bt, ev_i] = dS0[bt]
-                    cluster0_hist[closest0[bt],train_batch_labels[bt]] += 1
-                    cluster0_S_hist[closest0[bt],train_batch_labels[bt]] += S0[bt]
-                    cluster0_dS_hist[closest0[bt],train_batch_labels[bt]] += dS0[bt]
+            # for bt in range(batch_size):
+            #     if ts_np[bt,ev_i]!=-1:
+            #         S0_rec[bt, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] += S0[bt]
+            #         dS0_rec[bt, xs_np[bt,ev_i],ys_np[bt,ev_i],closest0[bt]] += dS0[bt]
+            #         S0_story[bt, ev_i] = S0[bt]
+            #         dS0_story[bt, ev_i] = dS0[bt]
+            #         cluster0_hist[closest0[bt],train_batch_labels[bt]] += 1
+            #         cluster0_S_hist[closest0[bt],train_batch_labels[bt]] += S0[bt]
+            #         cluster0_dS_hist[closest0[bt],train_batch_labels[bt]] += dS0[bt]
 
 
             

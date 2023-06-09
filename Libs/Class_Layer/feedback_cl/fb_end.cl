@@ -43,17 +43,24 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
                 tmp_S = -tmp_S;  
             }                        
         
+//             if(ev_i==0){
+//                 dS[i_file] = fabs(tmp_S);
+//             }
+//             else{
+//                 dS[i_file] = fabs(tmp_S-S[i_file]);
+//             }
+//             
+//             if (correct_response[i_file]==0){
+//                 dS[i_file] = -dS[i_file];          
+//             }
+
             if(ev_i==0){
-                dS[i_file] = fabs(tmp_S);
+                dS[i_file] = tmp_S;
             }
             else{
-                dS[i_file] = fabs(tmp_S-S[i_file]);
+                dS[i_file] = tmp_S-S[i_file];
             }
-            
-            if (correct_response[i_file]==0){
-                dS[i_file] = -dS[i_file];          
-            }
-                    
+                  
             
             S[i_file] = tmp_S;
         
