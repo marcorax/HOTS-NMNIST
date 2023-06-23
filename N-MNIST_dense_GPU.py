@@ -894,18 +894,21 @@ n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-lrate_0 = 1e-3
+# lrate_0 = 1e-3
+lrate_0 = 1e-5
 # th_lrate_0 = 5e-2#Check if smaller can help differentiate more clusters
-th_lrate_0 = 1e-4#Check if smaller can help differentiate more clusters
-s_gain = 1e-2
-# s_gain = 1e1
+# th_lrate_0 = 1e-4#Check if smaller can help differentiate more clusters
+th_lrate_0 = 0#Check if smaller can help differentiate more clusters
+
+# s_gain = 1e-3
+s_gain = 1
 
 win_l_0 = 9
 
 th_decay_0=0.9
-# th_size_0=250
+th_size_0=2500
 # th_size_0=20
-th_size_0=40
+# th_size_0=50
 
 res_x_0 = 28
 res_y_0 = 28
@@ -1174,14 +1177,17 @@ centroids_2_bf=Class2.buffers["centroids_bf"]
 cl.enqueue_copy(queue, centroids_2_bf, Class2.variables["centroids"]).wait()
 
 #%% Load init weitghts
+
+ratio_kmeans = 0.5
+
 save_dr = "Results/weights_save_NMNIST/"
 
 init_centroids_0 = np.load(save_dr+"Conv0_init_weights.npy")
 init_centroids_2 = np.load(save_dr+"Class2_init_weights.npy")
 
-Conv0.variables["centroids"][:] = init_centroids_0
+Conv0.variables["centroids"][:] = ratio_kmeans * init_centroids_0 + (1-ratio_kmeans)*Conv0.variables["centroids"][0]
 Conv0.variables["thresholds"][:] = th_size_0
-Class2.variables["centroids"][:] = init_centroids_2
+Class2.variables["centroids"][:] = ratio_kmeans * init_centroids_2 + 0.01*(1-ratio_kmeans)*Class2.variables["centroids"][0]
 
 centroids_0_bf=Conv0.buffers["centroids_bf"]
 thresholds_0_bf=Conv0.buffers["thresholds_bf"]
@@ -1210,12 +1216,12 @@ program=cl.Program(ctx, fstr).build(options='-cl-std=CL2.0')
 n_epochs=20
 validation_split=0.1
 
-# validation_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
-# validation_label_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
-# validation_cutoff = np.zeros([n_epochs, int(n_batches*validation_split)+1])
+validation_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
+validation_label_accuracy = np.zeros([n_epochs, int(n_batches*validation_split)+1])
+validation_cutoff = np.zeros([n_epochs, int(n_batches*validation_split)+1])
 
-# for epoch_i in range(0, n_epochs):
-for epoch_i in range(1):
+for epoch_i in range(0, n_epochs):
+# for epoch_i in range(1):
     
     # Conv0.variables["thresholds"][:] = th_size_0
     # thresholds_0_bf=Conv0.buffers["thresholds_bf"]
@@ -1223,7 +1229,7 @@ for epoch_i in range(1):
 
     rec=0
     for batch_i in range(0,n_batches):     
-    # for batch_i in range(2):     
+    # for batch_i in range(1):     
         n_events_rec=np.zeros(batch_size, dtype=int)
 
         for i in range(batch_size):
@@ -1376,7 +1382,12 @@ for epoch_i in range(1):
         label_accuracy = 0
         for rec_i in range(batch_size):
             idx,counts = np.unique(predicted_ev[rec_i], return_counts=True)
-            predicted_label = idx[np.argmax(counts[1:])+1]
+            if -1 in idx:
+                where_minus_one = np.where([idx==-1])[0][0]
+                idx=np.delete(idx,where_minus_one)
+                counts=np.delete(counts,where_minus_one)
+
+            predicted_label = idx[np.argmax(counts)]
             label_accuracy += predicted_label==train_batch_labels[rec_i]
         
         label_accuracy = label_accuracy/batch_size        
@@ -1398,10 +1409,10 @@ for epoch_i in range(1):
             thresholds_bf=Conv0.buffers["thresholds_bf"]
             cl.enqueue_copy(queue, thresholds_bf, thresholds).wait()
             
-        # if not (batch_i%int(validation_split*100)):
-        #     validation_accuracy[epoch_i, int(batch_i*validation_split)] = avg_accuracy
-        #     validation_label_accuracy[epoch_i, int(batch_i*validation_split)] = label_accuracy
-        #     validation_cutoff[epoch_i, int(batch_i*validation_split)] = avg_processed_ev
+        if not (batch_i%int(validation_split*100)):
+            validation_accuracy[epoch_i, int(batch_i*validation_split)] = avg_accuracy
+            validation_label_accuracy[epoch_i, int(batch_i*validation_split)] = label_accuracy
+            validation_cutoff[epoch_i, int(batch_i*validation_split)] = avg_processed_ev
 
 
 
@@ -1416,21 +1427,35 @@ centroids2 = centroids2_update - init_centroids_2
 centroids0 = centroids0_update - init_centroids_0
 #TODO CONTINUE FROM THIS
 
+
+#%% Relative hists
+
+#relative histograms
+cluster0_hist_rel = cluster0_hist.copy()
+cluster0_hist_old_rel = cluster0_hist_old.copy()
+
+for cluster_i in range(n_clusters_0):
+    cluster0_hist_rel[cluster_i] = cluster0_hist[cluster_i]/np.mean(cluster0_hist[cluster_i])
+    cluster0_hist_old_rel[cluster_i] = cluster0_hist_old[cluster_i]/np.mean(cluster0_hist_old[cluster_i])
+
+
 #%% Histogram plot
 centroids0 = Conv0.variables["centroids"] # + centroids0*100
-cluster_i = 10
+cluster_i = 16
 
 
 fig, axs = plt.subplots(1,3)
 fig.suptitle('Cluster #'+str(cluster_i))
 axs[0].imshow(init_centroids_0[cluster_i,:,:,0].transpose())
 axs[1].imshow(centroids0[0,cluster_i,:,:,0].transpose())
-axs[2].plot(cluster0_hist_old[cluster_i])
-axs[2].plot(cluster0_hist[cluster_i])
+axs[2].plot(cluster0_hist_old_rel[cluster_i])
+axs[2].plot(cluster0_hist_rel[cluster_i])
 
 
 #%% Specificity
-np.mean(np.std(cluster0_hist,axis=1) - np.std(cluster0_hist_old,axis=1))
+    
+
+np.mean(np.std(cluster0_hist_rel,axis=1) - np.std(cluster0_hist_old_rel,axis=1))
 
 #%% S dS plots
 file=0
@@ -1639,15 +1664,15 @@ np.save(save_dr+"Class2_init_weights_4by4_1ms_512",init_centroids_2)
 
 #%% SAVE
 save_dr = "Results/weights_save_NMNIST/"
-run_name = "_bigger_net_s_1e-2_long_1e3_fb_tau"
+run_name = "NEW_FB_05_Kmeans_bigger_net_s_1e-3_long_1e3_fb_tau"
 np.save(save_dr+"Conv0_weights"+run_name,Conv0.variables["centroids"])
 np.save(save_dr+"Conv0_th"+run_name,Conv0.variables["thresholds"])
 np.save(save_dr+"Class2_weights"+run_name,Class2.variables["centroids"])
 np.save(save_dr+"Accuracy_progress"+run_name,validation_accuracy)
 np.save(save_dr+"Label_Accuracy_progress"+run_name,validation_label_accuracy)
 np.save(save_dr+"Cutoff_progress"+run_name,validation_cutoff)
-np.save(save_dr+"cluster0_init_hist"+run_name,cluster0_hist_old)
-np.save(save_dr+"cluster0_final_hist"+run_name,cluster0_hist)
+# np.save(save_dr+"cluster0_init_hist"+run_name,cluster0_hist_old)
+# np.save(save_dr+"cluster0_final_hist"+run_name,cluster0_hist)
 
 
 Conv0_Params = Conv0.parameters
@@ -1661,7 +1686,7 @@ np.save(save_dr+"Class2_params"+run_name,Class2_Params)
 
 #%% LOAD
 save_dr = "Results/weights_save_NMNIST/"
-run_name = "_bigger_net_s_1e-2_long_1e3_fb_tau.npy"
+run_name = "NEW_FB_05_Kmeans_bigger_net_s_1e-3_long_1e3_fb_tau.npy"
 
 Conv0.variables["centroids"]=np.load(save_dr+"Conv0_weights"+run_name)
 Conv0.variables["thresholds"]=np.load(save_dr+"Conv0_th"+run_name)
@@ -1670,8 +1695,8 @@ validation_accuracy=np.load(save_dr+"Accuracy_progress"+run_name)
 validation_label_accuracy=np.load(save_dr+"Label_Accuracy_progress"+run_name)
 # validation_accuracy_fixed=np.load(save_dr+"Accuracy_progress_fixed_hidden.npy")
 validation_cutoff=np.load(save_dr+"Cutoff_progress"+run_name)
-cluster0_hist_old=np.load(save_dr+"cluster0_init_hist"+run_name)
-cluster0_hist=np.load(save_dr+"cluster0_final_hist"+run_name)
+# cluster0_hist_old=np.load(save_dr+"cluster0_init_hist"+run_name)
+# cluster0_hist=np.load(save_dr+"cluster0_final_hist"+run_name)
 
 
 
@@ -1807,3 +1832,9 @@ for batch_i in range(0,n_batches):
 
 
 
+#%% total events
+
+n_events = 0 
+for label in range(1):
+    for rec in range(128):
+        n_events+=len(train_set_orig[label][rec][0])
