@@ -128,7 +128,7 @@ class Conv_Layer:
         self.__ts_prec = ts_prec 
         
         centroids = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=w_prec)
-        centroids[:] = np.random.rand(n_clusters, win_l, win_l, n_pol)*0.001
+        centroids[:] = np.random.rand(n_clusters, win_l, win_l, n_pol)#*0.001
         
         #Used to store the dstep in direction of the new centroid position
         dcentroids = np.zeros([batch_size, n_clusters, win_l, win_l, n_pol],dtype=w_prec)

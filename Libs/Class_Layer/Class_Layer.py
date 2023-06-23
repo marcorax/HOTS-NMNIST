@@ -137,7 +137,7 @@ class Class_Layer:
         self.__ts_prec = ts_prec 
         
         centroids = np.zeros([batch_size, n_clusters, res_x, res_y, n_pol],dtype=w_prec)
-        centroids[:] = np.random.rand(n_clusters, res_x, res_y, n_pol)*0.001
+        centroids[:] = np.random.rand(n_clusters, res_x, res_y, n_pol)#*0.001
         
         # n_pol_per_cluster = n_pol//n_clusters
         # for i_cluster in range(n_clusters):
