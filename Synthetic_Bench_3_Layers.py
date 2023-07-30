@@ -785,7 +785,7 @@ pause_pressed=False
 slow_learning = True
 print_lay=2  
 with keyboard.Listener(on_press=on_press) as listener:
-    begin = time.time()
+    # begin = time.time()
     for epoch in range(1): 
         sentence_accuracy = np.zeros(len(data_surf))
         for sentence_i in range(1):
@@ -1098,7 +1098,7 @@ with keyboard.Listener(on_press=on_press) as listener:
                    
 
                         
-    end = time.time()
+    # end = time.time()
 
     listener.join()
  
