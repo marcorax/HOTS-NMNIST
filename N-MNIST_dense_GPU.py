@@ -9,13 +9,14 @@ Created on Fri Nov 18 08:37:36 2022
 
 import numpy as np
 from scipy import io
-import random 
+import random,os 
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from scipy.special import expit
 from pynput import keyboard
 import pyopencl as cl
 import time
+
 
 from Libs.HOTSLib import fb_surfaces, all_surfaces, n_mnist_rearranging,\
                             dataset_resize
@@ -894,21 +895,21 @@ n_clusters_0 = 32
 # n_clusters_0 = 1
 # lrate_0 = 1e-2
 # th_lrate_0 = 1e-1
-# lrate_0 = 1e-3
-lrate_0 = 1e-5
+lrate_0 = 1e-3
+# lrate_0 = 1e-5
 # th_lrate_0 = 5e-2#Check if smaller can help differentiate more clusters
-# th_lrate_0 = 1e-4#Check if smaller can help differentiate more clusters
-th_lrate_0 = 0#Check if smaller can help differentiate more clusters
+th_lrate_0 = 1e-4#Check if smaller can help differentiate more clusters
+# th_lrate_0 = 0#Check if smaller can help differentiate more clusters
 
-# s_gain = 1e-3
-s_gain = 1
+s_gain = 5e-4
+# s_gain = 1
 
 win_l_0 = 9
 
 th_decay_0=0.9
-th_size_0=2500
+# th_size_0=2500
 # th_size_0=20
-# th_size_0=50
+th_size_0=50
 
 res_x_0 = 28
 res_y_0 = 28
@@ -1197,7 +1198,7 @@ cl.enqueue_copy(queue, thresholds_0_bf, Conv0.variables["thresholds"]).wait()
 cl.enqueue_copy(queue, centroids_2_bf, Class2.variables["centroids"]).wait()
 
 #%% Train
-
+# NB HACKEEEEEEEEEEEEEEEEEEEED           S inth learnnnnn!!
 rec = 0
 epoch_i=0
 n_batches = 60000//batch_size
@@ -1310,6 +1311,17 @@ for epoch_i in range(0, n_epochs):
     
                 else:
                     Conv0.learn(net_buffers, queue)
+                    
+                # S0=Class2.variables["output_S"]
+                # dS0=Class2.variables["output_dS"]
+    
+                # S0_bf=Class2.buffers["output_S_bf"]
+                # dS0_bf=Class2.buffers["output_dS_bf"]
+                
+                # cl.enqueue_copy(queue, S0, S0_bf).wait()
+                # cl.enqueue_copy(queue, dS0, dS0_bf).wait()
+                
+                # print(np.max(S0))
                                     
             
 
@@ -1570,11 +1582,14 @@ for i in range(len(time_surface)):
 centroids0 = Conv0.variables["centroids"] # + centroids0*100
 centroids2 = Class2.variables["centroids"] #+ centroids2*100
 
+# centroids0 = init_centroids_0
+# centroids2 = init_centroids_2
+
 
 for i in range(n_clusters_0):
     plt.figure()
     plt.title("cluster: "+str(i))
-    plt.imshow(centroids0[1,i,:,:,0].transpose())
+    plt.imshow(centroids0[0,i,:,:,0].transpose())
 
 y = np.arange(res_x_2//2,res_x_2*n_clusters_0,res_x_2)
 lb = np.arange(0,n_clusters_0)
@@ -1664,41 +1679,49 @@ np.save(save_dr+"Class2_init_weights_4by4_1ms_512",init_centroids_2)
 
 #%% SAVE
 save_dr = "Results/weights_save_NMNIST/"
-run_name = "NEW_FB_05_Kmeans_bigger_net_s_1e-3_long_1e3_fb_tau"
-np.save(save_dr+"Conv0_weights"+run_name,Conv0.variables["centroids"])
-np.save(save_dr+"Conv0_th"+run_name,Conv0.variables["thresholds"])
-np.save(save_dr+"Class2_weights"+run_name,Class2.variables["centroids"])
-np.save(save_dr+"Accuracy_progress"+run_name,validation_accuracy)
-np.save(save_dr+"Label_Accuracy_progress"+run_name,validation_label_accuracy)
-np.save(save_dr+"Cutoff_progress"+run_name,validation_cutoff)
-# np.save(save_dr+"cluster0_init_hist"+run_name,cluster0_hist_old)
-# np.save(save_dr+"cluster0_final_hist"+run_name,cluster0_hist)
+run_name = "05_Kmeans_s_5e-3_fb_tau_1e3_lrate1e-3_lower_s_for_thresold_REAL_GOOD/"
+os.makedirs(save_dr+run_name)
+
+#LAST NET HAS INTERESTING RESULTS (max accuracy 96% with 70% cutoff) 
+np.save(save_dr+run_name+"Conv0_weights",Conv0.variables["centroids"])
+np.save(save_dr+run_name+"Conv0_th",Conv0.variables["thresholds"])
+np.save(save_dr+run_name+"Class2_weights",Class2.variables["centroids"])
+np.save(save_dr+run_name+"Accuracy",validation_accuracy)
+np.save(save_dr+run_name+"Label_Accuracy",validation_label_accuracy)
+np.save(save_dr+run_name+"Cutoff",validation_cutoff)
+# np.save(save_dr+run_name+"cluster0_init_hist",cluster0_hist_old)
+# np.save(save_dr+run_name"cluster0_final_hist",cluster0_hist)
 
 
 Conv0_Params = Conv0.parameters
 Conv0_Params.pop("ctx")
 Class2_Params = Class2.parameters
 Class2_Params.pop("ctx")
-np.save(save_dr+"Conv0_params"+run_name,Conv0_Params)
-np.save(save_dr+"Class2_params"+run_name,Class2_Params)
+np.save(save_dr+run_name+"Conv0_params",Conv0_Params)
+np.save(save_dr+run_name+"Class2_params",Class2_Params)
 
 
 
 #%% LOAD
 save_dr = "Results/weights_save_NMNIST/"
-run_name = "NEW_FB_05_Kmeans_bigger_net_s_1e-3_long_1e3_fb_tau.npy"
+run_name = "05_Kmeans_s_5e-3_fb_tau_1e3_lrate1e-3/"
 
-Conv0.variables["centroids"]=np.load(save_dr+"Conv0_weights"+run_name)
-Conv0.variables["thresholds"]=np.load(save_dr+"Conv0_th"+run_name)
-Class2.variables["centroids"]=np.load(save_dr+"Class2_weights"+run_name)
-validation_accuracy=np.load(save_dr+"Accuracy_progress"+run_name)
-validation_label_accuracy=np.load(save_dr+"Label_Accuracy_progress"+run_name)
+Conv0.variables["centroids"]=np.load(save_dr+run_name+"Conv0_weights.npy")
+Conv0.variables["thresholds"]=np.load(save_dr+run_name+"Conv0_th.npy")
+Class2.variables["centroids"]=np.load(save_dr+run_name+"Class2_weights.npy")
+validation_accuracy=np.load(save_dr+run_name+"Accuracy.npy")
+validation_label_accuracy=np.load(save_dr+run_name+"Label_Accuracy.npy")
 # validation_accuracy_fixed=np.load(save_dr+"Accuracy_progress_fixed_hidden.npy")
-validation_cutoff=np.load(save_dr+"Cutoff_progress"+run_name)
+validation_cutoff=np.load(save_dr+run_name+"Cutoff.npy")
 # cluster0_hist_old=np.load(save_dr+"cluster0_init_hist"+run_name)
 # cluster0_hist=np.load(save_dr+"cluster0_final_hist"+run_name)
 
-
+Conv0_Params = np.load(save_dr+run_name+"Conv0_params.npy", allow_pickle=True)
+Class2_Params = np.load(save_dr+run_name+"Class2_params.npy",  allow_pickle=True)
+Conv0.parameters = Conv0_Params.item()
+Class2.parameters = Class2_Params.item()
+Conv0.parameters["ctx"] = ctx
+Class2.parameters["ctx"] = ctx
 
 centroids_0_bf=Conv0.buffers["centroids_bf"]
 thresholds_0_bf=Conv0.buffers["thresholds_bf"]

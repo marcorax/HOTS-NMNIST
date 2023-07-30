@@ -44,14 +44,14 @@ __kernel void th_update(__global int *ts, __global int *n_clusters_b,
                   th_update[lin_idx] = th_update[lin_idx] + th[lin_idx]*(
 //                  th[lin_idx] = th[lin_idx] + (
                                 (double)lrate*(double)dS[i_file]*(double)exp((distances[lin_idx]-th[lin_idx])/tau_th)+
-                                (double)s_gain*(double)lrate*S[i_file]*(double)exp((distances[lin_idx]-th[lin_idx])/tau_th));
+                                (double)s_gain*0.1*(double)lrate*S[i_file]*(double)exp((distances[lin_idx]-th[lin_idx])/tau_th));
             }
             else if ((distances[lin_idx]-th[lin_idx])<0 && dS[i_file]>=0 && S[i_file]>=0){
 
                   th_update[lin_idx] = th_update[lin_idx] - th[lin_idx]*(
 //                   th[lin_idx] = th[lin_idx] - (
                                 (double)lrate*(double)dS[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th)+
-                                (double)s_gain*(double)lrate*(double)S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th));                    
+                                (double)s_gain*0.1*(double)lrate*(double)S[i_file]*exp((distances[lin_idx]-th[lin_idx])/tau_th));                    
             }    
         }            
     }

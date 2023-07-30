@@ -63,6 +63,11 @@ __kernel void fb_end(__global int *ts, __global int *ev_i_b,
                   
             
             S[i_file] = tmp_S;
+            
+            
+            // //             TO TEST IF S iS USEFUL
+            //             dS[i_file] = 1.0; 
+            //             S[i_file] = 1.0;
         
         }
             

@@ -1065,6 +1065,7 @@ class Class_Layer:
         global_space = (batch_size, self.__loc_cl_size)
         local_space = (1, self.__loc_cl_size)
         
+        
         self.program.fb_end(queue, global_space, local_space, ts_bf, ev_i_bf,
                             n_events_bf, fb_partial_sum_bf, S_bf, dS_bf,
                             correct_response_bf, bevskip_bf)
