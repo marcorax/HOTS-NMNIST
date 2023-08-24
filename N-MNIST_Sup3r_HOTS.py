@@ -66,7 +66,8 @@ queue = cl.CommandQueue(ctx)
 # %% Net intialization and training
 
 net = Sup3r_Net(ctx, queue)
-net.set_optimizer_param(lrate=1e-3, th_lrate=1e-4, s_gain=5e-4, batch_size=32)
+net.set_optimizer_param(lrate=1e-3, th_lrate=1e-4, s_gain=5e-4, batch_size=128)
+pre_train_folder = "Results/pre_train_test_save/"
 
 net.add_Conv(
     n_clusters=32,
@@ -88,4 +89,10 @@ net.add_Class(
     fb_tau=1e3,
 )
 
-net.train(dataset=nmnist_train, pre_train=True)
+net.train(
+    dataset=nmnist_train,
+    n_epochs=20,
+    pre_train=True,
+    pre_train_alpha=0.3,
+    pre_save_folder=pre_train_folder,
+)

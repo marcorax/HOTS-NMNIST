@@ -8,7 +8,7 @@ Created on Thu Jul 20 10:07:14 2023
 import numpy as np
 import pyopencl as cl
 from sklearn.cluster import KMeans
-import time
+import time, os
 
 from Libs.Dense_Layer.Dense_Layer import Dense_Layer
 from Libs.Class_Layer.Class_Layer import Class_Layer
@@ -47,7 +47,14 @@ class Sup3r_Net:
             "Cutoff": [],
         }
 
-    def pre_train(self, dataset, data_idx, alpha=0.5, quant_regression=False):
+    def pre_train(
+        self,
+        dataset,
+        data_idx,
+        alpha=0.5,
+        quant_regression=False,
+        save_folder=None,
+    ):
         """
         Method used to pretrain the layers of the networks by running kmeans
         on the first batch of data
@@ -69,6 +76,12 @@ class Sup3r_Net:
                                represents quantized values of a regression
                                problem.
 
+            save_folder : string, if provided pre_train will check if
+                          pretrained centroids are present and load them up.
+                          If no folder is found with this name, pre_train will
+                          generate new cenrtoids.
+
+
         """
 
         mf = cl.mem_flags
@@ -77,133 +90,199 @@ class Sup3r_Net:
         n_layers = len(self.layers)
         batch_size = self.batch_size
 
-        # TODO add the quant_ regression code
         if not quant_regression:
             batch_labels = np.array(
-                [dataset[idx][1] for idx in range(batch_size)]
+                [dataset[idx][1] for idx in data_idx[:batch_size]]
             )
 
+        run_clustering = True
+        if save_folder != None:
+            if os.path.exists(save_folder):
+                run_clustering = False
+
         for layer_i in range(n_layers):
-            if self.layers[layer_i].layer_type != "SpacePool":
+            if run_clustering:
 
-                n_pol = self.layers[layer_i].parameters["n_pol"]
-                n_clusters = self.layers[layer_i].parameters["n_clusters"]
-                n_events_batch = np.zeros(batch_size, dtype=int)
+                if self.layers[layer_i].layer_type != "SpacePool":
 
-                for i in range(batch_size):
-                    data_i = data_idx[i]
-                    n_events_batch[i] = len(dataset[data_i][0])
+                    n_pol = self.layers[layer_i].parameters["n_pol"]
+                    n_clusters = self.layers[layer_i].parameters["n_clusters"]
+                    n_events_batch = np.zeros(batch_size, dtype=int)
 
-                n_max_events = max(n_events_batch)
-                self.net_run_alloc(
-                    dataset, data_idx, 0, batch_size, n_max_events
-                )
+                    for i in range(batch_size):
+                        data_i = data_idx[i]
+                        n_events_batch[i] = len(dataset[data_i][0])
 
-                batch_size, ts_x, ts_y, n_pol = np.shape(
-                    self.layers[layer_i].variables["time_surface"]
-                )
-
-                time_surface = np.zeros(
-                    [batch_size, n_max_events, ts_x, ts_y, n_pol],
-                    dtype=np.float32,
-                )
-
-                time_surface_bf = cl.Buffer(
-                    ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=time_surface
-                )
-
-                net_buffers = self.net_buffers
-
-                # start_exec = time.time()
-
-                for ev_i in range(n_max_events):
-
-                    # Run Inference
-                    for layer_j in range(layer_i):
-                        self.layers[layer_j].infer(net_buffers, self.cl_queue)
-
-                    self.layers[layer_i].init_infer(
-                        net_buffers, self.cl_queue, time_surface_bf
+                    n_max_events = max(n_events_batch)
+                    ts_np = self.net_run_alloc(
+                        dataset, data_idx, 0, batch_size, n_max_events
                     )
 
-                    self.__next_ev(
-                        self.cl_queue,
-                        np.array([batch_size]),
-                        None,
-                        net_buffers["ev_i_bf"],
+                    batch_size, ts_x, ts_y, n_pol = np.shape(
+                        self.layers[layer_i].variables["time_surface"]
                     )
 
-                cl.enqueue_copy(
-                    self.cl_queue,
-                    self.layers[layer_i].variables["time_surface"],
-                    self.layers[layer_i].buffers["time_surface_bf"],
-                ).wait()
-
-                # Average nets update
-                for layer_j in range(n_layers):
-                    self.layers[layer_j].batch_update(self.cl_queue)
-
-                # Flush layer data
-                for layer_j in range(n_layers):
-                    self.layers[layer_j].batch_flush(self.cl_queue)
-
-                time_surface_input = np.zeros(
-                    [sum(n_events_batch), ts_x, ts_y, n_pol]
-                )
-
-                count = 0
-                for i, n_ev in enumerate(n_events_batch):
-                    time_surface_input[count : count + n_ev] = time_surface[
-                        i, :n_ev
-                    ]
-                    count += n_ev
-
-                if self.layers[layer_i].layer_type != "Classifier":
-
-                    time_surface_input = np.reshape(
-                        time_surface_input,
-                        [sum(n_events_batch), ts_x * ts_y * n_pol],
+                    time_surfaces = np.zeros(
+                        [sum(n_events_batch), ts_x, ts_y, n_pol],
+                        dtype=np.float32,
                     )
 
-                    init_kmeans = KMeans(
-                        n_clusters=n_clusters, n_init="auto"
-                    ).fit(time_surface_input)
+                    batch_events_label = np.zeros(sum(n_events_batch))
 
-                    init_centroids = np.reshape(
-                        init_kmeans.cluster_centers_,
-                        [n_clusters, ts_x, ts_y, n_pol],
-                    )
+                    print("Lay: " + str(layer_i))
+                    net_buffers = self.net_buffers
 
-                else:
+                    # start_exec = time.time()
+                    total_ts = 0
+                    for ev_i in range(n_max_events):
 
-                    if not quant_regression:
+                        # Run Inference
+                        for layer_j in range(layer_i):
+                            self.layers[layer_j].infer(
+                                net_buffers, self.cl_queue
+                            )
+
+                        self.layers[layer_i].infer(net_buffers, self.cl_queue)
+                        evskip = np.zeros(batch_size, dtype=np.int32)
+                        if self.layers[layer_i].layer_type != "Classifier":
+                            cl.enqueue_copy(
+                                self.cl_queue,
+                                evskip,
+                                net_buffers["fevskip_bf"],
+                            )
+                        else:
+                            cl.enqueue_copy(
+                                self.cl_queue,
+                                evskip,
+                                net_buffers["bevskip_bf"],
+                            )
+
+                        cl.enqueue_copy(
+                            self.cl_queue,
+                            self.layers[layer_i].variables["time_surface"],
+                            self.layers[layer_i].buffers["time_surface_bf"],
+                        ).wait()
+
+                        for file_i in range(batch_size):
+                            if (ts_np[file_i, ev_i] != -1) and (
+                                evskip[file_i] == 0
+                            ):
+                                time_surfaces[total_ts] = self.layers[
+                                    layer_i
+                                ].variables["time_surface"][file_i]
+                                if not quant_regression:
+                                    batch_events_label[
+                                        total_ts
+                                    ] = batch_labels[file_i]
+                                total_ts += 1
+
+                        self.__next_ev(
+                            self.cl_queue,
+                            np.array([batch_size]),
+                            None,
+                            net_buffers["ev_i_bf"],
+                        )
+
+                    time_surfaces = time_surfaces[:total_ts]
+                    batch_events_label = batch_events_label[:total_ts]
+
+                    # Average nets update
+                    for layer_j in range(n_layers):
+                        self.layers[layer_j].batch_update(self.cl_queue)
+
+                    # Flush layer data
+                    for layer_j in range(n_layers):
+                        self.layers[layer_j].batch_flush(self.cl_queue)
+
+                    if self.layers[layer_i].layer_type != "Classifier":
+
+                        time_surfaces = np.reshape(
+                            time_surfaces,
+                            [sum(n_events_batch), ts_x * ts_y * n_pol],
+                        )
+
+                        init_kmeans = KMeans(
+                            n_clusters=n_clusters, n_init="auto"
+                        ).fit(time_surfaces)
+
+                        init_centroids = np.reshape(
+                            init_kmeans.cluster_centers_,
+                            [n_clusters, ts_x, ts_y, n_pol],
+                        )
+
+                    else:
+
                         n_classes = self.layers[1].parameters["n_clusters"]
                         init_centroids = np.zeros(
                             [n_clusters, ts_x, ts_y, n_pol]
                         )
                         for class_i in range(n_classes):
-                            label_idx = batch_labels == class_i
+                            label_idx = batch_events_label == class_i
                             if sum(label_idx):
                                 init_centroids[class_i] = np.mean(
-                                    time_surface_input[label_idx], axis=0
+                                    time_surfaces[label_idx], axis=0
                                 )
                             else:
                                 print(
                                     "WATCHOUT! The first pretrain batch misses one or more classes, try increasing the batch size"
                                 )
 
-                self.layers[layer_i].variables["centroids"][:] = init_centroids
-                centroids_bf = self.layers[layer_i].buffers["centroids_bf"]
-                cl.enqueue_copy(
-                    self.cl_queue,
-                    centroids_bf,
-                    self.layers[layer_i].variables["centroids"],
-                ).wait()
+                    if save_folder != None:
 
-                # TODO add the actual alpha and save from here
-                # TODO remove init kernel, memory on GPUS is much lower than
-                # CPUS so only thing I can do is keep coping the ts back to
-                # HOST
+                        # Check if the save_folder exists, if not, create it !
+                        if not os.path.exists(save_folder):
+                            os.makedirs(save_folder)
+
+                        # Save the centroid
+                        np.save(
+                            save_folder
+                            + self.layers[layer_i].layer_type
+                            + "_"
+                            + str(layer_i)
+                            + "_weights",
+                            init_centroids,
+                        )
+
+                        # Save the centroid paramaters
+                        Layers_Params = self.layers[layer_i].parameters
+                        Layers_Params.pop("ctx")
+                        np.save(
+                            save_folder
+                            + self.layers[layer_i].layer_type
+                            + "_"
+                            + str(layer_i)
+                            + "_params",
+                            Layers_Params,
+                        )
+
+            else:
+
+                # Load previous centroids
+                init_centroids = np.load(
+                    save_folder
+                    + self.layers[layer_i].layer_type
+                    + "_"
+                    + str(layer_i)
+                    + "_weights.npy"
+                )
+
+            centr_max = np.max(init_centroids)
+
+            # weighted sum of random centroid +
+            # the pre_trained new centroid
+            # centroid =  alpha*centroid + (1-alpha)*(pre_centroid)
+            self.layers[layer_i].variables["centroids"][:] = (
+                alpha
+            ) * self.layers[layer_i].variables["centroids"][0] * centr_max + (
+                1 - alpha
+            ) * init_centroids
+
+            centroids_bf = self.layers[layer_i].buffers["centroids_bf"]
+            cl.enqueue_copy(
+                self.cl_queue,
+                centroids_bf,
+                self.layers[layer_i].variables["centroids"],
+            ).wait()
 
     def train(
         self,
@@ -212,6 +291,7 @@ class Sup3r_Net:
         n_epochs=1,
         pre_train=True,
         pre_train_alpha=0.5,
+        pre_save_folder=None,
         quant_regression=False,
         shuffle=True,
     ):
@@ -225,7 +305,8 @@ class Sup3r_Net:
         data_idx = np.arange(n_files)
         if shuffle:
             np.random.shuffle(data_idx)
-        n_batches = (n_files // batch_size) + 1
+        n_batches = n_files // batch_size  # Look if there is
+        # a way to not discard the last files for incomplete batches
 
         validation_accuracy = np.zeros(
             [n_epochs, int(n_batches * validation_split) + 1]
@@ -239,12 +320,19 @@ class Sup3r_Net:
 
         if pre_train:
             self.pre_train(
-                dataset, data_idx, pre_train_alpha, quant_regression
+                dataset,
+                data_idx,
+                pre_train_alpha,
+                quant_regression,
+                pre_save_folder,
             )
 
         for epoch_i in range(n_epochs):
 
-            rec_idx = 0
+            if shuffle:
+                np.random.shuffle(data_idx)
+
+            rec_idx = 0  # TODO Double check if Rec_IDX is used correctly for
             for batch_i in range(n_batches):
                 n_events_batch = np.zeros(batch_size, dtype=int)
 
@@ -253,7 +341,7 @@ class Sup3r_Net:
                     n_events_batch[i] = len(dataset[data_i][0])
 
                 n_max_events = max(n_events_batch)
-                self.net_run_alloc(
+                ts_np = self.net_run_alloc(
                     dataset, data_idx, rec_idx, batch_size, n_max_events
                 )
 
@@ -331,7 +419,10 @@ class Sup3r_Net:
                             counts = np.delete(counts, where_minus_one)
 
                         predicted_label = idx[np.argmax(counts)]
-                        label_accuracy += predicted_label == dataset[rec_i]
+                        label_accuracy += (
+                            predicted_label
+                            == dataset[data_idx[rec_idx + rec_i]][1]
+                        )
 
                     label_accuracy = label_accuracy / batch_size
                     print("Label Accuracy is " + str(label_accuracy))
@@ -452,6 +543,8 @@ class Sup3r_Net:
         }
 
         self.net_buffers = net_buffers
+
+        return ts_np
 
     def add_Conv(
         self,
@@ -671,6 +764,44 @@ class Sup3r_Net:
             self.layers[-2].variables["input_dS"] = self.layers[-1].variables[
                 "output_dS"
             ]
+
+        def save_net(save_folder):
+            """ """
+            # TODO this has to become the whole net save
+            n_layers = len(self.layers)
+
+            for layer_i in range(n_layers):
+                # Check if the save_folder exists, if not, create it !
+                if not os.path.exists(save_folder):
+                    os.makedirs(save_folder)
+
+                # Save the centroid
+                np.save(
+                    save_folder
+                    + self.layers[layer_i].layer_type
+                    + "_"
+                    + str(layer_i)
+                    + "_weights",
+                    self.layers[layer_i].variables["centroids"],
+                )
+
+                # Save the centroid paramaters
+                Layers_Params = self.layers[layer_i].parameters
+                Layers_Params.pop("ctx")
+                np.save(
+                    save_folder
+                    + self.layers[layer_i].layer_type
+                    + "_"
+                    + str(layer_i)
+                    + "_params",
+                    Layers_Params,
+                )
+
+        def load_net(save_folder):
+            """ """
+
+        def load_net_legacy(save_folder):
+            """ """
 
     def set_optimizer_param(self, lrate, th_lrate, s_gain, batch_size=32):
 
